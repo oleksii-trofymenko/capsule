@@ -180,7 +180,7 @@ Accessibility: one focus stop, role `button`; reads title, summary, date and bad
 - The budget bar (§10) closes the card.
 
 ### Wardrobe row
-Above the summary. `guide.wardrobe_label` in `textStyle.labelSmall` `text.secondary`, followed by the `guide.wardrobe_change` text link. One row, which wraps at large text. The link opens W1 (flows.md F9) and is labelled with the visible text plus the wardrobe ("Change, Menswear").
+Above the summary. `guide.wardrobe_label` in `textStyle.labelSmall` `text.secondary`, followed by the `guide.wardrobe_change` text link. One row, which wraps at large text. The link opens W1 (flows.md F9) and is labelled `a11y.wardrobe_change`.
 
 ### Why this works
 `surface.card`, radius `xl`, padding `space.5`, `shadow.md`. Title `guide.why.title` in `textStyle.heading` (heading level 2). Two or three bullets in `textStyle.bodySmall` `text.primary`, gap `space.2`, bullet indent `space.4`. Read as a list.

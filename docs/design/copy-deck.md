@@ -28,6 +28,7 @@ Every string used by [flows.md](flows.md) and [onboarding-wireframes.md](onboard
 | `a11y.close` | Close |
 | `a11y.share` | Share guide |
 | `a11y.wardrobe_button` | Capsule, AI stylist. Wardrobe: {wardrobe}. Change wardrobe |
+| `a11y.wardrobe_change` | Change, {wardrobe} |
 | `a11y.camera` | Add a photo of your clothes |
 | `a11y.mic` | Record a voice message |
 | `a11y.mic_stop` | Stop recording |
