@@ -45,14 +45,34 @@ An image pin in `.github/workflows/ci.yml`, `infra/compose/compose.base.yml` or 
 
 ## CI job `stack` fails (E0-13)
 
-The `stack (compose smoke)` job in `.github/workflows/ci.yml` runs on PRs that touch `apps/api/`, `infra/compose/`, the `Makefile`, workflows, `contracts/` or `.pre-commit-config.yaml`, and on every `main` push and daily run. It uses throwaway secrets that env-init generates on the runner. They are masked in the log (`***`) and deleted at the end. The failing step tells you where to look:
+The `stack (compose smoke)` job in `.github/workflows/ci.yml` runs on PRs that touch `apps/api/`, `infra/compose/`, `.env.example`, the `Makefile`, workflows, `contracts/` or `.pre-commit-config.yaml`, and on every `main` push and daily run. It uses throwaway secrets that env-init generates on the runner. They are masked in the log (`***`) and deleted at the end. The failing step tells you where to look:
 
-- `Throwaway secrets`: `.env.example` has a `change-me` key that env-init did not fill in. Run `bash infra/compose/env-init.sh .` locally on a copy.
+- `Throwaway secrets`: `.env.example` has a `change-me` key that env-init did not fill in. Run env-init on a copy in a temp folder (its argument is the folder that holds `.env.example`). It must print `ok`:
+
+  ```sh
+  d=$(mktemp -d); cp .env.example "$d/"
+  bash infra/compose/env-init.sh "$d" && ! grep '=change-me' "$d/.env" && echo ok
+  rm -rf "$d"
+  ```
+
 - `Pull images`: Docker Hub or GHCR is unreachable or rate-limited (`toomanyrequests`). Re-run the job. If it keeps failing, check the pins with `bash infra/compose/check-pins.sh`.
 - `Build api image`: the Dockerfile or `apps/api/uv.lock` is broken. Reproduce with `$C build api`.
 - `make up`: open `Dump stack logs` (`ps --all`, then the last 200 lines from each service) and follow "`make up` fails or times out" above. `not ready after 60 s` means a dependency failed `/v1/ready`. The api log names it.
 - `SeaweedFS lockdown check`: see "SeaweedFS exposure check fails" below. Treat any `FAIL` as a security regression in the PR.
-- `Restart keeps Postgres and Redis data`: after `make down` / `make up`, the job reads back a Postgres row and a Redis key, and expects `postgres: kept  redis: kept`. A missing value means a volume, `user:`, `read_only` or Redis AOF change lost data on restart. Reproduce locally under a throwaway project name, never `capsule`.
+- `Restart keeps Postgres and Redis data`: after `make down` / `make up`, the job reads back a Postgres row and a Redis key, and expects `postgres: kept  redis: kept`. A missing value means a volume, `user:`, `read_only` or Redis AOF change lost data on restart. Reproduce it under a throwaway project, never `capsule`. Only postgres and redis start, so port 8000 stays free. Tested in Git Bash:
+
+  ```sh
+  d=$(mktemp -d); cp .env.example "$d/"; bash infra/compose/env-init.sh "$d"
+  R="docker compose --project-name capsule-repro --env-file $d/.env -f infra/compose/compose.base.yml"
+  sql() { $R exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tA -c "$1"' sh "$1"; }
+  $R up --detach --wait postgres redis
+  sql "CREATE TABLE ci_smoke (v text); INSERT INTO ci_smoke VALUES ('kept')"
+  $R exec -T redis redis-cli SET ci:smoke kept
+  $R down && $R up --detach --wait postgres redis
+  sql "SELECT v FROM ci_smoke"; $R exec -T redis redis-cli GET ci:smoke   # both must print kept
+  $R down --volumes; rm -rf "$d"
+  ```
+
 
 The log dump shows only `ps` output and container logs. Do not add `compose config` or `docker inspect` to the job, because both print the interpolated secrets.
 

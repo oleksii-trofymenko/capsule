@@ -69,7 +69,7 @@ jobs:
           match() { grep -qE "$1|$shared" <<< "$files" && echo true || echo false; }
           echo "api=$(match '^(apps/api/|pyproject\.toml$|\.python-version$)')" >> "$GITHUB_OUTPUT"
           echo "mobile=$(match '^apps/mobile/')" >> "$GITHUB_OUTPUT"
-          echo "stack=$(match '^(apps/api/|infra/compose/)')" >> "$GITHUB_OUTPUT"
+          echo "stack=$(match '^(apps/api/|infra/compose/|\.env\.example$)')" >> "$GITHUB_OUTPUT"
           cat "$GITHUB_OUTPUT"
 
   pr-title:
@@ -350,6 +350,7 @@ jobs:
       - name: Pull images
         run: |
           $COMPOSE pull --quiet --ignore-buildable
+          # grpcurl is pinned only in check-seaweedfs.sh (GRPCURL=...); pre-pulled here so its time counts as pull.
           docker pull --quiet "$(sed -nE 's/^GRPCURL=(.*)$/\1/p' infra/compose/check-seaweedfs.sh)"
       - name: Build api image
         run: $COMPOSE build api
@@ -370,7 +371,9 @@ jobs:
           echo "postgres: ${got_pg:-<none>}  redis: ${got_redis:-<none>}"
           test "$got_pg" = "kept" && test "$got_redis" = "kept"
       # Container state and logs only. Never `compose config` or `docker inspect` here: both print
-      # the interpolated secrets.
+      # the interpolated secrets. Keep the `service | ` prefix: a log line then cannot start with
+      # `::` and act as a workflow command. If `--no-log-prefix` is ever used, wrap the dump in
+      # `::stop-commands::<random token>` as the `changes` job does.
       - name: Dump stack logs
         if: failure() && hashFiles('.env') != ''
         run: |
