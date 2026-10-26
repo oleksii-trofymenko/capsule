@@ -2,13 +2,13 @@
 
 | Field | Value |
 | --- | --- |
-| Status | review |
+| Status | done |
 | Owner | platform-engineer |
 | Reviewers | code-reviewer, security-engineer |
 | Estimate | M |
 | Metric | Time to first run |
 | Depends on | E0-06 |
-| ADRs | 006, 007, 008, 016 |
+| ADRs | 006, 007, 008, 016, 021 |
 | Design spec | none |
 
 ## Why
@@ -47,6 +47,7 @@ One command brings the backend up the same way on the home PC, on the laptop and
   - Secrets until ADR-015: `make up` runs `env-init.sh`, which creates the gitignored `.env` with random values (atomic) and refuses `change-me`. `infra/compose/test.env` (committed) holds throwaway credentials for the local `capsule-test` stack only.
   - SeaweedFS lockdown (security review): master/volume/filer bound to loopback; Iceberg/Lance listeners off; the S3 gRPC IAM port 18333 cannot be closed in 4.48 and needed BOTH `jwt.signing` and `jwt.filer_signing` keys (with `jwt.signing` alone, anonymous `PutIdentity` still created admin identities; cf. GHSA-5fx4-c9qp-36jc). Keys come from `.env` via Compose `configs.content`. `-s3.encryptVolumeData` (keys on the same disk). `check-seaweedfs.sh` proves it (pinned grpcurl image, local only).
   - `make test` runs a separate Compose test stack (`capsule-test`, Postgres + Redis only) and removes it on exit, error or Ctrl-C.
+- ADR-021 (uvicorn) accepted by the owner on 2026-10-26.
 - Reviews: code-reviewer request changes (Makefile continuations collapsed into tabs) -> fixed -> approve. security-engineer request changes (HIGH: unauthenticated S3 gRPC IAM; MEDIUM: Iceberg/Lance listeners) -> fixed -> approve. QA: pass, no bugs.
 - Numbers:
   - Clean clone -> `make up` -> `/v1/ready` 200: 34 s cold (empty build cache, Postgres/Redis images re-pulled), 6-7 s warm; 23-26 s after `make down` with data kept (SeaweedFS leader election). Target < 10 min.

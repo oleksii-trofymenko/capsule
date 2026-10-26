@@ -1,6 +1,6 @@
 # ADR-021: uvicorn (without extras) as the ASGI server for the API
 
-- Status: proposed
+- Status: accepted (2026-10-26)
 - Date: 2026-10-26
 - Deciders: Orchestrator, platform-engineer, project owner
 - Related: E0-06, E0-07, ADR-005, ADR-018, ADR-019
