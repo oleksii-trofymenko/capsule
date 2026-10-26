@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | review |
+| Status | done |
 | Owner | Orchestrator |
 | Reviewers | code-reviewer |
 | Estimate | S |
@@ -27,7 +27,7 @@ E0-03 and E0-05 changed several blueprint choices (MinIO → SeaweedFS, arq/Cele
 
 ## Allowed files
 
-- `apps/api/CLAUDE.md`, `infra/CLAUDE.md`, `README.md`, `docs/blueprint.md`, `docs/tasks/README.md`, `docs/tasks/E0/E0-06-api-skeleton.md`, `docs/tasks/E0/E0-07-compose-base.md`, `docs/tasks/E0/E0-10-align-docs-with-adrs.md`
+- `apps/api/CLAUDE.md`, `infra/CLAUDE.md`, `README.md`, `docs/blueprint.md`, `docs/tasks/README.md`, `docs/tasks/E0/E0-06-api-skeleton.md`, `docs/tasks/E0/E0-07-compose-base.md`, `docs/tasks/E0/E0-10-align-docs-with-adrs.md`, `docs/tasks/E0/E0-11-agent-rules-vs-adr-010.md` (new card only)
 
 ## Out of scope
 
@@ -46,5 +46,6 @@ E0-03 and E0-05 changed several blueprint choices (MinIO → SeaweedFS, arq/Cele
   - Notes in done cards (E0-01…E0-05) keep their historical wording; only cards not started (E0-06, E0-07) were updated.
   - The blueprint's home-prod row now says cloud fallback is off while the budget is €0 (ADR-010).
 - Review: code-reviewer requested changes — the first pass missed the ADR-010 cloud-fallback lines (diagram, §3 prose, E3 roadmap, chaos step) because the leftover search omitted `fallback`. Fixed, plus local-dev "no cloud route", Postgres backup target restored ("or the cloud", ADR-008 only excludes media), mobile storage row aligned with ADR-003, E0-06/E0-07 ADR fields updated.
-- Numbers: 8 files. Leftover search (`minio|testcontainers|3\.12|arq or celery|fallback|sqlite` outside ADRs and done cards): only the blueprint change note, lines already qualified with "off while the budget is €0" / "once the budget allows (ADR-010)", and the fallback-rate metric and alert (ADR-010 monitors it).
-- Left for later: E0-11 — align agent and skill rules with ADR-010 route names (`.claude/skills/agent-node/SKILL.md` uses aliases `fast`/`guide`/`vision`; ADR-010 uses `agent-parse`/`agent-guide`/`vision`/`embed`), check `ml/CLAUDE.md` and `.claude/agents/ai-engineer.md` fallback wording, and sweep the blueprint for ADR-001–004, 007, 009, 018, 019 drift. Before the E3 gateway card.
+- Numbers: 8 files. Leftover search (`minio|testcontainers|3\.12|arq or celery|fallback|sqlite` outside ADRs and done cards): only the blueprint change note, lines already qualified with "off while the budget is €0" / "once the budget allows (ADR-010)", and the fallback-rate metric and alert (ADR-010 monitors it). Re-review added two lines without the word "fallback" (§10 Stability, §14 "route hard requests to the cloud"); both fixed.
+- Review: code-reviewer approve on re-review. Docs only, so no QA run; CI green on the PR.
+- Left for later: card E0-11 filed — align agent and skill rules with ADR-010 route names (`.claude/skills/agent-node/SKILL.md` uses aliases `fast`/`guide`/`vision`; ADR-010 uses `agent-parse`/`agent-guide`/`vision`/`embed`), check `ml/CLAUDE.md` and `.claude/agents/ai-engineer.md` fallback wording, and sweep the blueprint for ADR-001–004, 007, 009, 018, 019 drift. Before the E3 gateway card.
