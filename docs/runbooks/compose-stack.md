@@ -53,14 +53,22 @@ Symptoms in `$C logs <service>`:
 - seaweedfs restarts; `please verify /data is writable ... permission denied`
 - redis exits with `Can't open or create append-only dir appendonlydir: Permission denied`, or it stays healthy and logs `Opening the temp file for AOF rewrite ...: Permission denied`. In the second case data written since the last good AOF write is at risk.
 
-Fix the ownership with a one-off container that has only `CHOWN` and no network. The data is kept. Tested on all three:
+Fix the ownership with a one-off root container that has no network and only two capabilities. `CHOWN` changes the owner. `DAC_READ_SEARCH` lets it enter `0700` directories owned by another uid, for example a PGDATA restored from an image that runs Postgres as uid 70. The data is kept. Tested on all three, and on a uid-70 PGDATA:
 
 ```sh
 $C stop <service>
-img=$(docker inspect --format '{{.Config.Image}}' "$($C ps -aq <service>)")
-MSYS_NO_PATHCONV=1 docker run --rm --network none --cap-drop ALL --cap-add CHOWN \
+img=$($C config --images <service>)   # also works after make down
+MSYS_NO_PATHCONV=1 docker run --rm --network none --user 0:0 \
+  --cap-drop ALL --cap-add CHOWN --cap-add DAC_READ_SEARCH --security-opt no-new-privileges:true \
   -v capsule_<volume>:/v --entrypoint chown "$img" -R <uid:gid> /v
 make up
+```
+
+For postgres, the restored data directory must also be mode `0700`, or Postgres refuses to start. Before `make up`, run as the new owner, with no capability:
+
+```sh
+MSYS_NO_PATHCONV=1 docker run --rm --network none --user 999:999 --cap-drop ALL \
+  --security-opt no-new-privileges:true -v capsule_pg_data:/v --entrypoint chmod "$img" 0700 /v
 ```
 
 | Service | Volume | uid:gid |
@@ -81,6 +89,10 @@ done
 ```
 
 Never start redis as root with a reduced capability set. Without `SETUID`/`SETGID` its entrypoint does not fail. It runs redis-server as root.
+
+## CI fails in `check-privileges`
+
+`check-privileges: <files>: <service>: <problem>` means a service in `compose.base.yml` (or the test overlay) has no non-root `user:`, lacks `cap_drop: [ALL]`, has a `cap_add`, or lacks `no-new-privileges:true`. Restore the setting. If a service truly needs a capability, that is a security decision: get security-engineer review, and change the check in the same PR. Run it locally with `bash infra/compose/check-privileges.sh`.
 
 ## Reset the stack (deletes all local data)
 

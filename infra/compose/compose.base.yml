@@ -35,6 +35,8 @@ services:
       redis:
         condition: service_healthy
     # Health check comes from the image: /v1/health (liveness), never /v1/ready.
+    # Same uid as the Dockerfile's USER; stated here so check-privileges.sh can see it.
+    user: "10001:10001"
     read_only: true
     tmpfs: [/tmp]
     cap_drop: [ALL]
@@ -58,8 +60,8 @@ services:
     read_only: true
     # The Unix socket dir must be writable by uid 999; /tmp for the entrypoint and initdb.
     tmpfs:
-      - /var/run/postgresql:uid=999,gid=999,mode=0775
-      - /tmp
+      - /var/run/postgresql:uid=999,gid=999,mode=0775,size=1m
+      - /tmp:size=64m
     cap_drop: [ALL]
     healthcheck:
       # -h 127.0.0.1: the real server, not the init-time one on the Unix socket.
@@ -98,7 +100,7 @@ services:
     # running redis-server as root, so never start it as root with a reduced cap set.
     user: "999:1000"
     read_only: true
-    tmpfs: [/tmp]
+    tmpfs: [/tmp:size=64m]
     cap_drop: [ALL]
     healthcheck:
       test: ["CMD-SHELL", "redis-cli ping | grep -q PONG"]
@@ -150,6 +152,8 @@ services:
     # Root filesystem stays writable: Compose cannot place `configs.content` (security.toml) into a
     # read-only container, and moving the JWT keys elsewhere is secrets work (ADR-015).
     user: "1000:1000"
+    # weed puts its Unix sockets in /tmp.
+    tmpfs: [/tmp:size=64m]
     cap_drop: [ALL]
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8333/healthz"]
