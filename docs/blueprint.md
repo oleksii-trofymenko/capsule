@@ -373,8 +373,8 @@ Goal: the project owner opens one dashboard and explains in two minutes, with nu
 - Full guide p95 more than 50% over target for 10 minutes.
 - Job queue > 20, or the oldest job > 2 minutes.
 - GPU temperature > 83 °C or VRAM > 95%.
-- "Try again later" answers > 1% of consultations for 10 minutes (99% SLO).
-- Gateway fallback rate on any route > 30% for 10 minutes (local inference degrading; ADR-010).
+- (Proposed, owner to confirm) "Try again later" answers > 1% of consultations for 10 minutes (protects the 99% availability target in `docs/metrics.md`).
+- (Proposed, owner to confirm) Gateway fallback rate on any route > 30% for 10 minutes (local inference degrading; ADR-010).
 - Crash-free rate of a new release < 99.5%.
 
 ### How the project owner tests personally
