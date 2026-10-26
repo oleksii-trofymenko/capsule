@@ -8,7 +8,7 @@
 | Estimate | M |
 | Metric | Time to first run |
 | Depends on | E0-01 |
-| ADRs | 005, 007 (from E0-03; while planned, follow `docs/blueprint.md` §4 as the root `CLAUDE.md` says) |
+| ADRs | 005, 007, 016 |
 | Design spec | none |
 
 ## Why

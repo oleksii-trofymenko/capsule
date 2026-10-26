@@ -8,7 +8,7 @@
 | Estimate | M |
 | Metric | Time to first run |
 | Depends on | E0-06 |
-| ADRs | 006, 007, 008 (from E0-03) |
+| ADRs | 006, 007, 008, 016 |
 | Design spec | none |
 
 ## Why
