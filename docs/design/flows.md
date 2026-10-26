@@ -189,9 +189,9 @@ The first guide needs no account. Sign-up is offered when it has a clear benefit
 Design depends on these; E1 owns how they are built.
 
 - The guest credential lives only in `expo-secure-store` (ADR-003), like account tokens.
-- The server holds only what a consultation needs (requests, follow-up answers, guides, wardrobe/style/sizes choices). Media follow ADR-008.
+- The server holds only what a consultation needs (requests, voice transcripts, garments found in photos, follow-up answers, guides, wardrobe/style/sizes choices). Media follow ADR-008. Retention, deletion, export and moving to an account cover all of these.
 - Guest data on the server is deleted N days after the last activity. N is in config; the upper bound is fixed in an E1 ADR (30 days proposed) and stated in the Privacy notice (`save.sheet.local_warning` uses `{retention_days}`).
-- "Delete my data" is available to guests and account holders (F10). It deletes server data, the PostHog person, Sentry data for the id, and both local stores (secure-store and MMKV, including saved guides).
+- "Delete my data" is available to guests and account holders (F10). It deletes server data, the PostHog person, Sentry data for the id, and both local stores (secure-store and MMKV, including saved guides). E2 note: Sentry per-id deletion on the free plan must be verified; if it is not possible, propose an ADR-004 amendment (crash reports carry no user or guest id and expire with Sentry retention) and change `privacy.delete.body_guest` / `privacy.delete.body_account` accordingly. The current text stays until then.
 - Data export is available on the same terms as deletion.
 - Moving guest data to an account happens only during sign-up or sign-in, in one step that presents the guest credential and the new token together; the guest credential is then revoked. Guest data is never matched by email, device or analytics id.
 - Rate limits apply per guest credential and per IP.
@@ -258,7 +258,7 @@ Requirements only; layout in E1/E3.
 
 - The two switches from O2 (`onb.consent.crash.label`, `onb.consent.usage.label`, with their descriptions). Turning one off stops that SDK at once, deletes its queued data and resets its id. No "withdrawn" event is sent.
 - `privacy.export` — download my data (guest or account).
-- `privacy.delete` → confirm `privacy.delete.title` with `privacy.delete.body_guest` or `privacy.delete.body_account`, buttons `privacy.delete.confirm` / `saved.delete.cancel`.
+- `privacy.delete` → confirm `privacy.delete.title` with `privacy.delete.body_guest` or `privacy.delete.body_account`, buttons `privacy.delete.confirm` / `saved.delete.cancel`. Needs a connection. The server deletion runs first; the local stores (including the guest credential) are wiped only after the server confirms, then `privacy.delete.done` is shown. If it fails, nothing local is wiped and `error.server.title` + `error.try_again` is shown. Offline: `privacy.delete.offline`, button disabled.
 
 ## Analytics (agreed with product-analyst, 2026-10-26)
 
@@ -269,12 +269,12 @@ Usage events are sent only while the "Usage events" switch is on (O2 / S1). Prop
 | `consent_given` | Usage events switched on | `source`: onboarding \| settings |
 | `app_opened` | Cold start, or foreground after ≥ 30 min in the background | `is_guest` |
 | `onboarding_started` | O3 first shown. Once per install; never back-filled if usage events are turned on later | — |
-| `onboarding_step_completed` | Leaving O3, O4 or O5 forwards | `step`: wardrobe \| style \| sizes; `skipped` |
+| `onboarding_step_completed` | Leaving O3, O4 or O5 forwards. May repeat if the user goes back | `step`: wardrobe \| style \| sizes; `skipped` (true only for "Skip for now") |
 | `onboarding_completed` | First C1 shown | `wardrobe`: menswear \| womenswear \| unisex \| skipped; `has_style`; `has_sizes` |
 | `consultation_started` | First message of a consultation sent | `input`: text \| voice \| photo; `is_guest`; `from_example` |
 | `follow_up_answered` | User answers a follow-up | `via`: chip \| text \| voice |
 | `permission_result` | OS permission dialog closes | `kind`: camera \| photos \| microphone; `granted` |
-| `guide_delivered` | Guide fully received and validated | `guide_id`; `latency_ms` (send → complete); `within_budget`; `owned_items_count`; `follow_ups_count`; `is_first`; `is_guest`; `since_onboarding_ms` (only when `is_first`) |
+| `guide_delivered` | Guide fully received and validated | `guide_id`; `latency_ms` (user's last message before generation → guide complete); `within_budget`; `owned_items_count`; `follow_ups_count`; `is_first` (first guide ever on this install; the device sets it whether or not usage events are on); `is_guest`; `since_onboarding_ms` (only when `is_first`) |
 | `guide_failed` | A consultation ends without a guide | `reason`: timeout \| no_fit \| server_error \| connection_dropped \| stopped_by_user; `is_guest` |
 | `guide_feedback` | 👍 / 👎 tapped | `guide_id`; `helpful` |
 | `guide_feedback_reason` | A 👎 reason chip tapped | `guide_id`; `reason`: too_expensive \| not_my_style \| wrong_for_occasion \| other |

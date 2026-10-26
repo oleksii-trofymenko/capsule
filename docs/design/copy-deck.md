@@ -65,7 +65,7 @@ Every string used by [flows.md](flows.md) and [onboarding-wireframes.md](onboard
 | `onb.consent.usage.label` | Usage events |
 | `onb.consent.usage.desc` | Which steps you complete, such as "guide finished", so we can see what works. Linked to a random id, not your name or email. |
 | `onb.consent.details_toggle` | What we collect |
-| `onb.consent.details` | We collect: when you open the app, which steps you complete, the wardrobe you pick (menswear, womenswear or unisex), how long a guide takes, whether it stayed within budget, whether you used text, voice or a photo, whether you rated a guide helpful, whether you created an account, and technical details of crashes. We never collect: your messages, photos, voice notes, sizes, budget, details of your occasion or screenshots. Sentry (crash reports) and PostHog (usage events) store this in the EU and process it only for us. More in the Privacy notice. |
+| `onb.consent.details` | We collect: when you open the app, which steps you complete, the wardrobe you pick (menswear, womenswear or unisex), how long a guide takes, whether it stayed within budget, how many of your own items it reused, whether you used text, voice or a photo, whether you allowed camera, photos or microphone access, whether you rated or saved a guide and the reason you picked if it wasn't helpful, whether you created an account, and technical details of crashes. We never collect: your messages, photos, voice notes, sizes, budget, details of your occasion or screenshots. Sentry (crash reports) and PostHog (usage events) store this in the EU and process it only for us. More in the Privacy notice. |
 | `onb.consent.change_later` | You can change this any time in Settings › Privacy. |
 | `onb.consent.allow` | Allow both |
 | `onb.consent.decline` | Don't allow |
@@ -133,7 +133,7 @@ Every string used by [flows.md](flows.md) and [onboarding-wireframes.md](onboard
 | `photo.preview.retake` | Retake |
 | `photo.item.in_look` | in the look |
 | `photo.item.not_used` | not used |
-| `photo.privacy_note` | I only look at the clothes. Capsule doesn't keep your photo on this phone, and our server deletes it once it's processed, always within 24 hours. |
+| `photo.privacy_note` | I only look at the clothes, so lay them flat or hang them up; you don't need to be in the photo. I don't keep your photo on this phone, and our server deletes it once it's processed, always within 24 hours. The clothes I found stay in your chat as text. |
 | `voice.recording` | Recording… |
 | `voice.cancel` | Cancel |
 | `voice.limit` | Voice messages can be up to 1 minute. |
@@ -153,7 +153,7 @@ Every string used by [flows.md](flows.md) and [onboarding-wireframes.md](onboard
 | `perm.photos.body` | I'll only see the photo you pick, not the rest of your library. I only look at the clothes, and our copy is deleted within 24 hours. |
 | `perm.photos.denied` | Photo access is off. To choose a photo, turn it on in Settings. You can still type or use the camera. |
 | `perm.mic.title` | Talk instead of typing |
-| `perm.mic.body` | I'll turn your voice message into text so you can check it before I answer. I only use your words, not how you sound. The recording isn't kept on this phone, and our server deletes it once it's transcribed, always within 24 hours. |
+| `perm.mic.body` | I'll turn your voice message into text so you can check it before I answer. I only use your words, not how you sound. The recording isn't kept on this phone, and our server deletes it once it's transcribed, always within 24 hours. The text stays in your chat. |
 | `perm.mic.denied` | Microphone access is off. To send voice messages, turn it on in Settings. You can still type. |
 | `perm.continue` | Continue |
 | `perm.not_now` | Not now |
@@ -247,6 +247,8 @@ Every string used by [flows.md](flows.md) and [onboarding-wireframes.md](onboard
 | `privacy.delete.body_guest` | This deletes your guides, chats and choices from this phone and from our server, along with any crash reports and usage events linked to you. This can't be undone. |
 | `privacy.delete.body_account` | This deletes your account, guides, chats and choices from every phone and from our server, along with any crash reports and usage events linked to you. This can't be undone. |
 | `privacy.delete.confirm` | Delete everything |
+| `privacy.delete.offline` | You need a connection to delete your data from our server. |
+| `privacy.delete.done` | Your data has been deleted. |
 
 ## Offline
 
