@@ -22,17 +22,26 @@ fail() { echo "FAIL $1" >&2; status=1; }
 container=$("${COMPOSE[@]}" ps --quiet seaweedfs)
 [ -n "$container" ] || { echo "check-seaweedfs: seaweedfs is not running; run make up" >&2; exit 1; }
 image=$(docker inspect --format '{{.Config.Image}}' "$container")
+# Same precedence as Compose: values exported in the shell win over .env.
+shell_key=${SEAWEEDFS_S3_ACCESS_KEY-} shell_secret=${SEAWEEDFS_S3_SECRET_KEY-}
 set -a
 # shellcheck disable=SC1091
 . ./.env
 set +a
+[ -z "$shell_key" ] || SEAWEEDFS_S3_ACCESS_KEY=$shell_key
+[ -z "$shell_secret" ] || SEAWEEDFS_S3_SECRET_KEY=$shell_secret
 
 # 1. Listeners. Allowed beyond loopback: 8333 and 18333. 127.0.0.11 is Docker's embedded DNS.
 exposed=$(docker exec "$container" netstat -tln |
-  awk 'NR > 2 { print $4 }' | grep -Ev '^127\.0\.0\.(1|11):' | sort -u | tr '\n' ' ')
+  awk 'NR > 2 { print $4 }' | { grep -Ev '^127\.0\.0\.(1|11):' || true; } | sort -u | tr '\n' ' ')
 unexpected=$(tr ' ' '\n' <<<"$exposed" | grep -Ev '^$|:(8333|18333)$' || true)
-if [ -z "$unexpected" ]; then pass "listeners beyond loopback: ${exposed% }"; else
-  fail "unexpected listeners: $unexpected"; fi
+if [ -n "$unexpected" ]; then
+  fail "unexpected listeners: $(tr '\n' ' ' <<<"$unexpected")"
+elif ! grep -Eq ':8333( |$)' <<<"$exposed"; then
+  fail "S3 API (8333) does not listen beyond loopback: '${exposed% }'"
+else
+  pass "listeners beyond loopback: ${exposed% }"
+fi
 
 # 2. IAM gRPC without a token, and with a forged one.
 grpc() { # extra grpcurl args...

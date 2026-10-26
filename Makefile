@@ -19,9 +19,13 @@ COMPOSE := docker compose --project-name capsule --env-file .env -f infra/compos
 up: ## Build and start the stack, then wait until /v1/ready returns 200
 	@bash infra/compose/env-init.sh .
 	$(COMPOSE) up --detach --build --wait --wait-timeout 300
-	@url="http://$$($(COMPOSE) port api 8000)/v1/ready"; \
+	@addr=$$($(COMPOSE) port api 8000 2>/dev/null); \
+	if [ -z "$$addr" ]; then \
+	  echo "api publishes no port 8000; see docs/runbooks/compose-stack.md" >&2; exit 1; \
+	fi; \
+	url="http://$$addr/v1/ready"; \
 	for _ in $$(seq 1 60); do \
-	  if curl -fsS -o /dev/null --max-time 2 "$$url"; then echo "ready: $$url"; exit 0; fi; \
+	  if curl -fsS --max-time 2 "$$url" >/dev/null; then echo "ready: $$url"; exit 0; fi; \
 	  sleep 1; \
 	done; \
 	echo "not ready after 60 s: $$url; see docs/runbooks/compose-stack.md" >&2; exit 1
