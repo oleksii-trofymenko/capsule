@@ -25,6 +25,8 @@ uv tool install pre-commit --python 3.13
 winget install ezwinports.make --accept-package-agreements --accept-source-agreements
 ```
 
+Open a new terminal after installing, so `pre-commit` and `make` are on `PATH`.
+
 Then, in the repository:
 
 ```sh
