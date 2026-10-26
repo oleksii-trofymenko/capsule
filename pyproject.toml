@@ -21,6 +21,10 @@ select = [
   "RUF",
 ]
 
+[tool.ruff.lint.isort]
+# apps/api top-level packages (ADR-005 layout).
+known-first-party = ["core", "main", "modules", "tests", "workers"]
+
 [tool.ruff.lint.flake8-tidy-imports]
 ban-relative-imports = "all"
 
@@ -32,3 +36,4 @@ python_version = "3.13"
 strict = true
 warn_unreachable = true
 enable_error_code = ["ignore-without-code"]
+plugins = ["pydantic.mypy"] # ships with pydantic; checks model __init__ arguments

@@ -40,12 +40,17 @@ repos:
         args: [--fix]
       - id: ruff-format
 
-  - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: 2834ec6639549dd6796205c8f011dedcd587288b # frozen: v2.4.0
+  # mypy runs in the API's locked uv environment, so FastAPI and Pydantic types are visible
+  # (ADR-018). Its version is pinned in apps/api/pyproject.toml; strictness comes from
+  # [tool.mypy] in the root pyproject.toml.
+  - repo: local
     hooks:
       - id: mypy
-        files: ^apps/api/
-        args: [] # strictness comes from [tool.mypy] in pyproject.toml
+        name: mypy (apps/api)
+        language: system
+        entry: uv run --project apps/api --locked mypy apps/api
+        files: ^(apps/api/.*\.py|apps/api/pyproject\.toml|apps/api/uv\.lock|pyproject\.toml)$
+        pass_filenames: false
 
   # Mobile tools run from apps/mobile/node_modules, so versions live in its package.json.
   # They skip while apps/mobile has no source files; root-level config files do not trigger them.

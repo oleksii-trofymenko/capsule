@@ -1,0 +1,41 @@
+# Capsule API (ADR-005). Ruff and mypy settings live in the root pyproject.toml (ADR-018).
+[project]
+name = "capsule-api"
+version = "0.1.0"
+requires-python = "==3.13.*"
+dependencies = [
+  "fastapi>=0.146,<1",                # ADR-005
+  "pydantic>=2.14,<3",                # ADR-005
+  "sqlalchemy[asyncio]>=2.1.5,<2.2",  # ADR-007
+  "psycopg[binary]>=3.3.6,<4",        # ADR-007, ADR-009 (one driver for SQLAlchemy and LangGraph)
+  "redis>=8.1,<9",                    # ADR-006
+]
+
+[dependency-groups]
+dev = [
+  "pytest>=9.1,<10",                  # ADR-016
+  "hypothesis>=6.170,<7",             # ADR-016
+  "mypy==2.4.0",                      # ADR-018, same version as the former mirror hook
+  "httpx>=0.28.1,<0.29",              # ADR-020: ASGI test client
+  "pyyaml>=6.0.3,<7",                 # ADR-020: read contracts/openapi.yaml
+  "types-pyyaml>=6.0.12",             # ADR-020: stubs for mypy strict
+  "types-jsonschema>=4.26",           # ADR-020: stubs for mypy strict
+  "jsonschema>=4.26,<5",              # ADR-020: validate responses against the contract
+]
+
+[tool.uv]
+package = false
+# Resolution cutoff: dependency releases must be at least 7 days old (ADR-018, ADR-019).
+# Bump it in its own PR together with `uv lock --upgrade`.
+exclude-newer = "2026-10-19T00:00:00Z"
+
+[tool.pytest.ini_options]
+minversion = "9.1"
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = ["--strict-markers", "--strict-config", "-ra"]
+xfail_strict = true
+filterwarnings = ["error"]
+markers = [
+  "integration: needs real Postgres and Redis via DATABASE_URL and REDIS_URL (ADR-016)",
+]

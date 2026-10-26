@@ -52,6 +52,7 @@ ml/models/
 # User media must never be committed
 uploads/
 media/
+!/apps/api/modules/media/
 
 # IDE and OS
 .vscode/

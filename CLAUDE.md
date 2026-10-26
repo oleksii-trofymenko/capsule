@@ -39,7 +39,7 @@ No Makefile yet: each target is created by the card in brackets. Keep this list 
 
 - `make hooks` — install the pre-commit and commit-msg hooks (E0-04)
 - `make lint` — every pre-commit hook on all files, plus secret scans of unstaged changes and Git history (E0-04)
-- `make test` — unit and integration tests (E0-06)
+- `make test` — API unit, contract and integration tests; starts throwaway Postgres/Redis containers unless `CAPSULE_TEST_DATABASE_URL` and `CAPSULE_TEST_REDIS_URL` are both set (E0-06). Run from Git Bash on Windows.
 - `make up` / `make down` / `make logs` — start, stop and tail the stack (E0-07)
 - `make eval` — eval suite in `ml/evals` (later: E3, with ADR-017)
 
