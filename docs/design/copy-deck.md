@@ -28,6 +28,7 @@ Every string used by [flows.md](flows.md) and [onboarding-wireframes.md](onboard
 | `a11y.close` | Close |
 | `a11y.share` | Share guide |
 | `a11y.wardrobe_button` | Capsule, AI stylist. Wardrobe: {wardrobe}. Change wardrobe |
+| `a11y.wardrobe_change` | Change, {wardrobe} |
 | `a11y.camera` | Add a photo of your clothes |
 | `a11y.mic` | Record a voice message |
 | `a11y.mic_stop` | Stop recording |
@@ -40,6 +41,7 @@ Every string used by [flows.md](flows.md) and [onboarding-wireframes.md](onboard
 | `a11y.recording` | Recording |
 | `a11y.recording_elapsed` | {seconds} seconds |
 | `a11y.guide_ready` | Guide ready |
+| `a11y.loading` | Loading |
 | `a11y.style_count` | {n} of 3 selected |
 | `a11y.style_max` | Unavailable, maximum 3 |
 | `a11y.size_picker` | {category} size, {system}, {value} |

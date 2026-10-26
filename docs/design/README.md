@@ -8,6 +8,8 @@ Specs the mobile app is built from. No screen is built without one (`apps/mobile
 | [flows.md](flows.md) | Every flow, step by step: screen, states, accessibility, analytics |
 | [onboarding-wireframes.md](onboarding-wireframes.md) | Low-fidelity wireframes for onboarding, guest sign-up, saved guides and sheets (not on the canvas) |
 | [copy-deck.md](copy-deck.md) | All en-GB strings for these flows, with ids |
+| [tokens.json](tokens.json) | Design tokens (W3C DTCG): primitive palette, theme-independent scales (`base`), light and dark semantic themes. The only source of colour, type, spacing, radius, shadow and motion for the app (E0-09) |
+| [components.md](components.md) | Base components with every state, the flows → components coverage table and the WCAG contrast table for both themes (E0-09) |
 | [reference/](reference/) | Exports of the owner's canvas: [chat](reference/01-chat.png), [guide](reference/02-guide.png), [generating](reference/03-state-generating.png), [offline](reference/04-state-offline.png), and three story slides ([ask](reference/05-slide-1-ask.png), [photo](reference/06-slide-2-photo.png), [guide](reference/07-slide-3-guide.png)) |
 
 ## How to read
