@@ -1,6 +1,6 @@
 # ADR-020: API test tooling: httpx, PyYAML and jsonschema as dev-only dependencies
 
-- Status: proposed
+- Status: accepted (2026-10-26)
 - Date: 2026-10-26
 - Deciders: Orchestrator, backend-engineer, project owner
 - Related: E0-06, ADR-005, ADR-016, ADR-018, ADR-019

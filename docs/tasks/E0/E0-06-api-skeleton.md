@@ -2,13 +2,13 @@
 
 | Field | Value |
 | --- | --- |
-| Status | review |
+| Status | done |
 | Owner | backend-engineer |
 | Reviewers | code-reviewer |
 | Estimate | M |
 | Metric | Time to first run |
 | Depends on | E0-01 |
-| ADRs | 005, 007, 016 |
+| ADRs | 005, 007, 016, 020 |
 | Design spec | none |
 
 ## Why
@@ -50,6 +50,7 @@ Every later backend card needs the same base: settings, logging, error format an
   - CI: certifi PYSEC-2026-4320 ignored in pip-audit as a false positive (security-engineer, review by 2026-11-09; remove at the next `exclude-newer` bump ≥ 2026-10-27).
   - `.gitignore`: `!/apps/api/modules/media/` after the unanchored `media/` (user-media protection elsewhere kept).
   - PR size ~1,830 lines excl. `uv.lock` (≈ tests 50 %, contract 12 %); code-reviewer advised against splitting.
+- ADR-020 accepted by the owner on 2026-10-26 after discussing the rejected options: Schemathesis to be revisited with the first endpoint that takes user input (card E1-06; trigger line goes into the `new-endpoint` skill via E0-11).
 - Reviews: security-engineer approve (on green audit). code-reviewer approve → QA fail (B1: `/ready` 11 s when Postgres hangs on a pooled connection; B2: httpx logged full URLs) → fixed; code-reviewer found two concurrency defects in the fix (unshared probes per request; double cancel interrupting cleanup) → fixed → approve. QA re-test: pass.
 - Numbers:
   - `/ready` with Postgres paused on a pooled connection: 11,033 ms → 1,011 ms; worst 503 across all QA cases 1,036 ms (limit 1,250 ms). 10 concurrent calls with Postgres paused → 1 probe task, 1 connection; 0 / 0 after cleanup.
