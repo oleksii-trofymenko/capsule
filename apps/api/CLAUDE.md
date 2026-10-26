@@ -11,7 +11,7 @@ Read the root `CLAUDE.md` first. This file adds backend rules.
 
 ## Rules
 
-- Python 3.12+, full type hints, mypy strict. A `# type: ignore` needs a reason on the same line.
+- Python 3.13 (ADR-005), full type hints, mypy strict. A `# type: ignore` needs a reason on the same line.
 - Pydantic v2 schemas on every request and response. No bare `dict` at the API edge.
 - Async all the way: no blocking calls (requests, `time.sleep`, sync DB drivers) in async code.
 - Dependencies through `Depends`; no global mutable state. One DB session per request.
@@ -24,6 +24,6 @@ Read the root `CLAUDE.md` first. This file adds backend rules.
 ## Tests
 
 - Unit: domain logic, no network.
-- Integration: real Postgres and Redis via Testcontainers.
+- Integration: real Postgres and Redis — CI service containers, the same images through Compose locally, found via `DATABASE_URL` and `REDIS_URL`; mark tests `integration` (ADR-016).
 - Contract: responses validated against `contracts/openapi.yaml`.
 - Each feature: a happy path, a failure path and an edge case. Mock only at system boundaries.

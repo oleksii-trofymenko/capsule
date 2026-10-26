@@ -2,7 +2,7 @@
 
 > **Implementation copy.** The project owner keeps the working version of this blueprint as a private doc. This file is the English version for implementation, current as of 2026-10-26.
 >
-> **Precedence:** an accepted ADR in `docs/adr/` and the root `CLAUDE.md` win over this file. Known differences from the owner's version: the Orchestrator is the main Claude Code session, not a subagent; Go is optional and needs a benchmark plus an ADR before use. When the owner's version changes, update this file in its own commit (`docs(blueprint): …`).
+> **Precedence:** an accepted ADR in `docs/adr/` and the root `CLAUDE.md` win over this file. Known differences from the owner's version: the Orchestrator is the main Claude Code session, not a subagent; Go is optional and needs a benchmark plus an ADR before use; accepted ADRs changed some choices (2026-10-26) — Python 3.13 (ADR-005), SAQ worker (ADR-006), SeaweedFS instead of MinIO with media deleted within 24 h and never backed up (ADR-008), MMKV-only mobile cache with SQLite deferred (ADR-003), no cloud LLM fallback while the budget is €0 (ADR-010), CI service containers instead of Testcontainers (ADR-016). When the owner's version changes, update this file in its own commit (`docs(blueprint): …`).
 
 ## 1. The problem we solve
 
@@ -54,7 +54,7 @@ flowchart TB
   subgraph pc["Home PC 24/7 · RTX 5070 Ti 16 GB · Ryzen 9700X · 32 GB"]
     api["API · FastAPI<br/>auth, validation, limits"] --> pg[("PostgreSQL + pgvector<br/>data, memory, trends")]
     api --> redis[("Redis<br/>queue, cache, rate limit")]
-    api --> minio[("MinIO (S3)<br/>photo and audio with TTL")]
+    api --> seaweedfs[("SeaweedFS (S3 API)<br/>photo and audio, deleted within 24 h")]
     redis --> worker["Worker<br/>photo, audio, generation"]
     worker --> agent["Agent · LangGraph<br/>follow-ups, RAG, budget"]
     agent --> gw["LLM gateway · LiteLLM<br/>routing and fallback"]
@@ -62,12 +62,12 @@ flowchart TB
     gw --> cpu["CPU<br/>Whisper, embeddings"]
     obs["Observability: OpenTelemetry, Prometheus, Loki, Tempo, Grafana, Langfuse"]
   end
-  gw -.->|fallback| cloudllm["Cloud LLM APIs"]
+  gw -.->|"fallback (off while budget is €0)"| cloudllm["Cloud LLM APIs"]
   phone -.-> sentry["Sentry · PostHog"]
   ci["GitHub Actions · EAS"] -.-> pc
 ```
 
-A request from the phone goes through the tunnel to the API. Heavy work (photo, audio, generation) goes through the Redis queue to the worker, and the worker runs the agent. The agent reaches models only through the gateway: the local GPU for LLM and Vision, the CPU for Whisper and embeddings, the cloud as fallback. The laptop is for development and dashboards, not a server.
+A request from the phone goes through the tunnel to the API. Heavy work (photo, audio, generation) goes through the Redis queue to the worker, and the worker runs the agent. The agent reaches models only through the gateway: the local GPU for LLM and Vision, the CPU for Whisper and embeddings. Cloud fallback is off while the budget is €0, so a GPU outage returns "try again later" (ADR-010). The laptop is for development and dashboards, not a server.
 
 ## 4. Stack (lead's view)
 
@@ -77,13 +77,13 @@ The stack follows "boring, proven technology plus one flexible layer over the mo
 | --- | --- | --- | --- |
 | Mobile | Expo (React Native) + TypeScript strict, Expo Router | One codebase for iOS and Android, OTA updates, EAS Build | ADR-001 |
 | Mobile: state and data | TanStack Query (server state + offline cache), Zustand (local state) | Caching, retry and sync out of the box | ADR-002 |
-| Mobile: storage | expo-secure-store (Keychain/Keystore) for tokens, SQLite/MMKV for cache | Tokens never in plain storage | ADR-003 |
+| Mobile: storage | expo-secure-store (Keychain/Keystore, this device only) for tokens, MMKV for the query cache; SQLite deferred | Tokens never in plain storage | ADR-003 |
 | Mobile: quality | Sentry (crashes + performance), PostHog (analytics, feature flags) | Crash-free rate, flags, staged rollout | ADR-004 |
-| API | Python 3.12+, FastAPI, Pydantic v2, OpenAPI 3.1 as the contract | Async, generated contract and mobile types | ADR-005 |
-| Background jobs | Redis + worker (arq or Celery) | Photo, audio and generation never block HTTP | ADR-006 |
+| API | Python 3.13, FastAPI, Pydantic v2, OpenAPI 3.1 as the contract | Async, generated contract and mobile types | ADR-005 |
+| Background jobs | Redis + SAQ worker | Photo, audio and generation never block HTTP | ADR-006 |
 | Database | PostgreSQL 16 + pgvector, Alembic migrations, SQLAlchemy 2 (async) | One database for data, memory and RAG; fewer moving parts | ADR-007 |
 | Cache and limits | Redis | Response cache, rate limiting, queue | ADR-006 |
-| File storage | MinIO (S3-compatible) with TTL deletion | Local = S3 in the cloud with no code change | ADR-008 |
+| File storage | SeaweedFS behind the S3 API; deletion within 24 h by our own job | Local = S3 in the cloud with no code change | ADR-008 |
 | Agent orchestration | LangGraph | Explicit state graph, checkpoints, nodes easy to test | ADR-009 |
 | LLM gateway | LiteLLM (OpenAI-compatible), routing config + fallback | Local → cloud by config change | ADR-010 |
 | Inference (local) | Ollama first → vLLM after a benchmark | Simplicity first, throughput later | ADR-011 |
@@ -91,7 +91,7 @@ The stack follows "boring, proven technology plus one flexible layer over the mo
 | Observability | OpenTelemetry → Grafana (Prometheus, Loki, Tempo), Langfuse for LLM traces, Sentry | Metrics, logs, traces and LLM quality in one place | ADR-013 |
 | Secure access | Cloudflare Tunnel (no open ports), JWT + refresh tokens | The home server is never exposed | ADR-014 |
 | Secrets | Local: SOPS or Docker secrets; cloud: Vault / Secret Manager | No secrets in Git | ADR-015 |
-| Tests | pytest, Hypothesis, Testcontainers; Jest + RNTL; Maestro (mobile E2E); k6 (load) | Unit → integration → E2E → load | ADR-016 |
+| Tests | pytest, Hypothesis, real Postgres/Redis as CI service containers; Jest + RNTL; Maestro (mobile E2E); k6 (load) | Unit → integration → E2E → load | ADR-016 |
 | Eval | Own eval runner + LLM-as-judge, run in CI | Guide quality as a number | ADR-017 |
 | Code quality | Ruff, mypy (strict), ESLint, Prettier, TypeScript strict, pre-commit, Conventional Commits | Standards enforced automatically | ADR-018 |
 | CI/CD | GitHub Actions, EAS Build/Update, GHCR for images | Automated from PR to release | ADR-019 |
@@ -343,9 +343,9 @@ Every requirement has a numeric target and a way to check it. LLM generation has
 | First guide token (streaming) | p95 < 3 s on the local GPU | Langfuse + TTFT metric |
 | Full guide | p95 < 25 s (revise after the model benchmark) | Langfuse, eval report |
 | 30-second voice note | p95 < 5 s | Worker metric |
-| Availability | 99% for the home server (higher with cloud fallback) | External uptime monitor |
+| Availability | 99% for the home server (higher with cloud fallback once the budget allows, ADR-010) | External uptime monitor |
 | Database | An index for every frequent query, EXPLAIN in the PR, connection pool, no N+1 | Code review, pg_stat_statements |
-| Stability | Idempotency keys for POST, retry with backoff, a timeout on every external call, circuit breaker, graceful degradation (no GPU → cloud or a "try again later" message) | Chaos tests: stop Ollama, Redis |
+| Stability | Idempotency keys for POST, retry with backoff, a timeout on every external call, circuit breaker, graceful degradation (no GPU → a "try again later" message; cloud once the budget allows, ADR-010) | Chaos tests: stop Ollama, Redis |
 | Security | OWASP API Top 10, all input validated, parameterised queries, JWT + refresh rotation, rate limiting, sensitive fields encrypted, secrets outside code | Security checklist, scanners (bandit, pip-audit, gitleaks) |
 | API | OpenAPI contract, `/v1` versioning, one error format | Contract tests in CI |
 | Observability | Structured JSON logs, RED metrics, OpenTelemetry traces, `/health` and `/ready` | Grafana dashboard |
@@ -381,7 +381,7 @@ Goal: the project owner opens one dashboard and explains in two minutes, with nu
 2. **Smoke flow on the phone:** sign up → "date night look, €100" → follow-up → photo → guide. Find the request in Langfuse and see each agent step with time and tokens.
 3. **Eval:** one command runs 50–100 scenarios and reports mean score, budget compliance and the 5 worst answers.
 4. **Load:** k6 at 10 / 25 / 50 virtual users; see where p95 breaks and what saturates (GPU, queue, database).
-5. **Chaos:** stop Ollama — requests go to cloud fallback; stop Redis — the API returns a clear error instead of crashing.
+5. **Chaos:** stop Ollama — the app answers "try again later" (cloud fallback is off while the budget is €0, ADR-010); stop Redis — the API returns a clear error instead of crashing.
 6. **Offline:** turn off the phone's network — history is available, a new message waits in the queue.
 
 ### Explaining with numbers (epic report template)
@@ -398,7 +398,7 @@ Moving to the cloud means switching a Compose profile and the model config, not 
 
 | File | Contains | Used on |
 | --- | --- | --- |
-| `compose.base` | api, worker, postgres+pgvector, redis, minio | Always |
+| `compose.base` | api, worker, postgres+pgvector, redis, seaweedfs | Always |
 | `compose.local-gpu` | ollama/vllm with GPU access, faster-whisper | Home PC |
 | `compose.observability` | otel-collector, prometheus, loki, tempo, grafana, langfuse | Home PC, later cloud |
 | `compose.tunnel` | cloudflared | Home PC |
@@ -408,8 +408,8 @@ Moving to the cloud means switching a Compose profile and the model config, not 
 
 | Environment | Where | Models | Purpose |
 | --- | --- | --- | --- |
-| local-dev | Laptop | Stubs or a rate-limited cloud API | Mobile development, quick tests |
-| home-prod | PC, 24/7 | Local GPU + cloud fallback | MVP, real users, benchmarks |
+| local-dev | Laptop | Stubs (no cloud route while the budget is €0, ADR-010) | Mobile development, quick tests |
+| home-prod | PC, 24/7 | Local GPU (cloud fallback off while the budget is €0, ADR-010) | MVP, real users, benchmarks |
 | cloud | VPS / Cloud Run / ECS + GPU provider or API | Provider APIs or rented GPU | Scaling |
 
 ### Migration plan (when the numbers say so)
@@ -423,7 +423,7 @@ Moving to the cloud means switching a Compose profile and the model config, not 
 ### Home server: operating rules
 
 - A UPS, and Docker starting automatically after a reboot.
-- Daily backup of Postgres and MinIO to an external disk or the cloud; restore tested monthly.
+- Daily backup of Postgres to an external disk or the cloud; restore tested monthly. Media are never backed up (ADR-008).
 - OS and driver updates on a schedule, never during a demo.
 - Router ports closed; access only through the tunnel. Admin UIs (Grafana, Langfuse) only behind Cloudflare Access or Tailscale.
 
@@ -438,7 +438,7 @@ One epic = one chat with the Orchestrator. Each item below is one task, one bran
 - [ ] ADR-001…ADR-010 for the core stack
 - [ ] Pre-commit: Ruff, mypy, ESLint, Prettier, gitleaks
 - [ ] CI: lint + typecheck + (empty) tests green
-- [ ] `compose.base`: api (health), postgres, redis, minio
+- [ ] `compose.base`: api (health), postgres, redis, seaweedfs
 - [ ] Design: personas (men and women aged 20–60), key user flows, MVP wireframes
 - [ ] Design system: tokens (colour, type, spacing), base components, light and dark theme
 
@@ -460,7 +460,7 @@ One epic = one chat with the Orchestrator. Each item below is one task, one bran
 ### E3. MVP consultation (text)
 
 - [ ] Design: onboarding (wardrobe choice, style, sizes), chat and guide mockups + usability test with 5 people
-- [ ] LLM gateway (LiteLLM) with a local model and cloud fallback
+- [ ] LLM gateway (LiteLLM) with a local model; cloud fallback only when the budget allows (ADR-010)
 - [ ] Agent graph: request parsing node and follow-up node
 - [ ] Structured, prioritised guide response (schema)
 - [ ] Streaming the response to the app (SSE)
@@ -483,7 +483,7 @@ One epic = one chat with the Orchestrator. Each item below is one task, one bran
 
 ### E6. Photo and voice
 
-- [ ] Media upload: on-device compression, validation, EXIF removal, TTL in MinIO
+- [ ] Media upload: on-device compression, validation, EXIF removal, deletion within 24 h (ADR-008)
 - [ ] Vision node: clothes, colours, style (no appearance rating)
 - [ ] Audio: recording in the app, faster-whisper in the worker
 - [ ] VRAM budget: which models run together, loading/unloading
@@ -509,9 +509,9 @@ The log is updated at the end of every epic. The biggest MVP risk is a source of
 | Risk | Likelihood | Impact | Mitigation |
 | --- | --- | --- | --- |
 | No legal, stable source of products and prices | High | High | Early spike: affiliate APIs (e.g. affiliate networks), search APIs; scraping only where the site allows it |
-| 16 GB VRAM is not enough for all models at once | High | Medium | VRAM budget, STT and embeddings on CPU, one multimodal model instead of two, cloud fallback |
-| Local models are worse than cloud models | Medium | Medium | Evals compare; route hard requests to the cloud |
-| Home server unavailable (power, internet, updates) | Medium | Medium | UPS, uptime monitor, cloud API fallback, an honest 99% SLO |
+| 16 GB VRAM is not enough for all models at once | High | Medium | VRAM budget, STT and embeddings on CPU, one multimodal model instead of two, cloud fallback once the budget allows (ADR-010) |
+| Local models are worse than cloud models | Medium | Medium | Evals compare; route hard requests to the cloud once the budget allows (ADR-010) |
+| Home server unavailable (power, internet, updates) | Medium | Medium | UPS, uptime monitor, cloud API fallback once the budget allows (ADR-010), an honest 99% SLO |
 | Photo privacy and store requirements | Medium | High | TTL deletion, no appearance rating, privacy manifest, user consent |
 | Prompt injection through product descriptions or trends | Medium | Medium | Separate instructions from data, sanitise, check output in code |
 | Overcoding by agents, context sprawl | High | Medium | Harness, PR size limit, independent review, one task per chat |
