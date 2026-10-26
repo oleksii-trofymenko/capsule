@@ -128,7 +128,6 @@ services:
       - -ip.bind=127.0.0.1
       - -s3.ip.bind=0.0.0.0
       # Iceberg (8181) and Lance (9101) catalog endpoints are not used; they would bind 0.0.0.0.
-      - -s3.port.iceberg=0
       - -s3.port.lance=0
       # Per-chunk encryption of S3 uploads. The keys sit in the filer store on the same disk, so
       # this is not protection against a stolen disk; that needs host disk encryption (README).
