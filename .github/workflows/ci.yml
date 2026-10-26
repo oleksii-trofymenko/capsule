@@ -320,7 +320,7 @@ jobs:
     name: ci-ok
     if: always()
     # Must list every other job in this file; the first step fails the gate otherwise.
-    needs: [changes, pr-title, secrets, lint, unit-api, unit-mobile, integration, audit-api]
+    needs: [changes, pr-title, secrets, lint, unit-api, unit-mobile, integration, audit-api, audit-mobile]
     runs-on: ubuntu-24.04
     timeout-minutes: 2
     steps:
