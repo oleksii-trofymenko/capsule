@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | review |
+| Status | done |
 | Owner | product-designer |
 | Reviewers | product-analyst, you |
 | Estimate | M |
