@@ -7,7 +7,7 @@
 
 ## Context
 
-The success metrics (blueprint §1) need product events: activation, time to first guide, helpful rate, D7 retention, click-through. Quality targets (blueprint §10) need crash-free rate > 99.5 %, app start and slow-frame data per release. Releases need feature flags and staged rollout 10 % → 50 % → 100 %. Users are in Europe, so data must stay in the EU and analytics must respect consent.
+The success metrics (blueprint §1) need product events: activation, time to first guide, helpful rate, D7 retention, click-through. Quality targets (blueprint §10) need crash-free rate > 99.5 %, app start and slow-frame data per release, plus feature flags. Users are in Europe, so data must stay in the EU, analytics must wait for consent, and screens show users' outfit photos, so nothing may record the screen.
 
 ## Options
 
@@ -17,11 +17,11 @@ The success metrics (blueprint §1) need product events: activation, time to fir
 
 ## Decision
 
-Use Sentry for crashes, performance and release health, and PostHog for product analytics and feature flags, both on EU data regions, with analytics only after user consent and no personal data or photos in events.
+Use Sentry (`@sentry/react-native` with its Expo plugin) for crashes, performance and release health, and PostHog for product analytics and feature flags, both in EU data regions, configured privacy-first: Sentry with `sendDefaultPii: false`, no screenshots, attachments or session replay, and a `beforeBreadcrumb`/`beforeSend` that strips auth headers, tokens and request bodies; PostHog with autocapture and session replay off, only events from the card-defined schema, nothing captured before consent (flags fall back to coded defaults), and users identified only by a random pseudonymous id.
 
 ## Consequences
 
-- Easier: metrics from blueprint §1 and §10 come from dashboards on day one; staged rollout via flags.
-- Harder: an event schema to maintain (cards list their analytics events); consent handling in onboarding.
+- Easier: metrics from blueprint §1 and §10 come from dashboards on day one; feature gating via PostHog flags. Staged rollout itself uses Play staged rollout, App Store phased release and `eas update --rollout-percentage`; forced update uses the API minimum version (blueprint §10).
+- Harder: an event schema to maintain (cards list their analytics events); consent handling in onboarding; nothing critical may depend on a flag; source maps uploaded for every EAS build and update; a signed DPA with each vendor, and account deletion also deletes the person in PostHog and their data in Sentry.
 - We will monitor: free-tier quotas, SDK impact on cold start and bundle size.
-- Revisit when: monthly cost exceeds the free tiers by a clear margin, or EU data-residency rules require self-hosting.
+- Revisit when: combined spend exceeds €50/month for two consecutive months, the SDKs add > 150 ms to cold start or > 3 MB installed size, or EU data-residency rules require self-hosting.
