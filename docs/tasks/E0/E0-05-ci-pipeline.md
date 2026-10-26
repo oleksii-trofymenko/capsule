@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | review |
+| Status | done |
 | Owner | platform-engineer |
 | Reviewers | code-reviewer, security-engineer |
 | Estimate | M |
@@ -17,12 +17,12 @@ Every PR gets the same automatic checks, so "works on my machine" never reaches 
 
 ## Acceptance criteria
 
-- [ ] ADR-016 (test strategy) and ADR-019 (CI/CD) written and accepted.
+- [x] ADR-016 (test strategy) and ADR-019 (CI/CD) written and accepted.
 - [x] GitHub Actions workflow on pull requests: lint → typecheck → unit tests (API and mobile), with caching of dependencies.
 - [x] Jobs run only when their area changed (path filters), plus a full run on `main`.
 - [x] Integration test job wired for Postgres and Redis service containers (it may run zero tests until E0-06 adds one).
 - [x] gitleaks and dependency audit (pip-audit, npm audit) as jobs; high and critical findings fail the build.
-- [ ] Branch protection on `main`: PR required, checks required, squash merge only.
+- [x] Branch protection on `main`: PR required, checks required, squash merge only.
 - [x] Record p50 duration over five runs in Notes; target < 8 min.
 
 ## Allowed files
@@ -48,6 +48,7 @@ Every PR gets the same automatic checks, so "works on my machine" never reaches 
   - API/mobile jobs switch on `apps/api/pyproject.toml` / `apps/mobile/package.json`; until then they pass with a notice. A missing lockfile then fails loudly.
   - pip-audit fails on any known vulnerability (no severity filter) — owner-approved deviation from "high and critical"; exceptions are per-ID with a reason.
   - CI title regex is intentionally stricter than the local hook (kebab-case scope).
+- Accepted by the owner 2026-10-26: ADR-016 and ADR-019. Settings applied the same day: ruleset `main` requires status check `ci-ok` (GitHub Actions, app 15368; strict up-to-date off) and allows squash merges only; fork PR workflows need approval for all outside contributors; default workflow token is read-only and cannot approve PRs.
 - Reviews: code-reviewer request changes (ADR Decision must be one sentence) → fixed → approve. security-engineer approve (forgeable gate, unpinned tool deps, audit schedule, hygiene → fixed or documented). QA: pass.
 - Numbers:
   - p50 over 5 runs (run 40353007333): wall 50 s (48/50/47/54/50), execution 45 s, runner time 80 s; cold first run 55 s. Target < 8 min. Caveat: no real tests yet.

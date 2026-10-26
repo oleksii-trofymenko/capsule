@@ -21,7 +21,7 @@ One file per decision: `docs/adr/NNN-short-title.md`, from `000-template.md`. Ac
 | 013 | OpenTelemetry → Grafana stack, Langfuse for LLM traces | planned | E2 |
 | 014 | Cloudflare Tunnel, JWT with rotating refresh tokens | planned | E1 |
 | 015 | Secrets: SOPS / Docker secrets locally, a vault in the cloud | planned | E1 |
-| [016](016-test-strategy.md) | Test strategy: pytest against real Postgres and Redis, Jest + RNTL, Maestro, k6 | proposed | E0-05 |
+| [016](016-test-strategy.md) | Test strategy: pytest against real Postgres and Redis, Jest + RNTL, Maestro, k6 | accepted | E0-05 |
 | 017 | Eval runner and LLM-as-judge in CI | planned | E3 |
 | [018](018-code-quality-pre-commit.md) | Code quality: Ruff, mypy strict, ESLint, Prettier, pre-commit, Conventional Commits | accepted | E0-04 |
-| [019](019-ci-cd-github-actions.md) | CI/CD: GitHub Actions with one required gate check (`ci-ok`); GHCR and EAS for delivery | proposed | E0-05 |
+| [019](019-ci-cd-github-actions.md) | CI/CD: GitHub Actions with one required gate check (`ci-ok`); GHCR and EAS for delivery | accepted | E0-05 |

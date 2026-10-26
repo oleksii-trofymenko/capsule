@@ -1,6 +1,6 @@
 # ADR-016: Test strategy: pytest against real Postgres and Redis, Jest + RNTL, Maestro, k6
 
-- Status: proposed
+- Status: accepted (2026-10-26)
 - Date: 2026-10-26
 - Deciders: Orchestrator, platform-engineer, project owner
 - Related: E0-05, E0-06, ADR-001, ADR-005, ADR-006, ADR-007, ADR-019, blueprint §4 "Tests", §9, §10

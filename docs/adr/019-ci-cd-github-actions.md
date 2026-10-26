@@ -1,6 +1,6 @@
 # ADR-019: CI/CD on GitHub Actions with one required gate check; GHCR and EAS for delivery
 
-- Status: proposed
+- Status: accepted (2026-10-26)
 - Date: 2026-10-26
 - Deciders: Orchestrator, platform-engineer, project owner
 - Related: E0-05, ADR-001, ADR-016, ADR-018, blueprint §4 "CI/CD", §9
