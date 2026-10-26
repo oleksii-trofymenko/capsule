@@ -58,7 +58,10 @@ paths:
                   postgres: ok
                   redis: ok
         "503":
-          description: At least one dependency failed or exceeded the probe timeout; `failing` names it.
+          description: |
+            At least one dependency failed or exceeded the probe timeout; `failing` names it.
+            After a dependency hangs, it may stay in `failing` for up to ~10 s after it recovers,
+            while the previous check finishes cleaning up its connection.
           headers:
             X-Request-ID:
               $ref: "#/components/headers/RequestId"

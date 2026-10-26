@@ -210,3 +210,58 @@ async def test_probe_with_slow_cleanup_is_not_awaited_or_restarted() -> None:
 
     assert third.status_code == 503
     assert calls == 2
+
+
+async def test_concurrent_checks_share_one_probe_per_dependency() -> None:
+    calls = 0
+
+    async def slow_cleanup() -> None:
+        nonlocal calls
+        calls += 1
+        try:
+            await asyncio.sleep(10)
+        except asyncio.CancelledError:
+            await asyncio.sleep(0.3)
+            raise
+
+    budget = 0.1
+    app = _app_with({"postgres": slow_cleanup, "redis": _ok}, timeout_s=budget)
+    async with client_for(app) as client:
+
+        async def timed() -> tuple[int, list[str], float]:
+            started = time.perf_counter()
+            response = await client.get("/v1/ready")
+            return response.status_code, response.json()["failing"], time.perf_counter() - started
+
+        results = await asyncio.gather(*(timed() for _ in range(5)))
+        live = [t for t in asyncio.all_tasks() if t.get_name().startswith("ready-probe-")]
+
+        assert calls == 1
+        assert all(status == 503 and failing == ["postgres"] for status, failing, _ in results)
+        assert max(elapsed for *_, elapsed in results) <= budget + 0.25
+        assert len(live) == 1  # the one postgres probe, still cleaning up
+        assert app.state.probe_tasks.live() == 1  # and it is tracked
+
+        await app.state.probe_tasks.drain(1.0)
+        assert app.state.probe_tasks.live() == 0
+
+
+async def test_probe_that_cancels_itself_reports_failing_not_500() -> None:
+    async def cancels_itself() -> None:
+        raise asyncio.CancelledError
+
+    async with client_for(_app_with({"postgres": _ok, "redis": cancels_itself})) as client:
+        response = await client.get("/v1/ready")
+
+    assert response.status_code == 503
+    assert response.json()["failing"] == ["redis"]
+
+
+async def test_failed_probe_outcome_is_always_retrieved() -> None:
+    app = _app_with({"postgres": _refused, "redis": _ok})
+    async with client_for(app) as client:
+        await client.get("/v1/ready")
+        task = app.state.probe_tasks._tasks["postgres"]
+
+    assert task.done()
+    assert task._log_traceback is False  # asyncio's "exception was never retrieved" flag

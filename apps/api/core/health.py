@@ -1,10 +1,13 @@
 """GET /v1/health (liveness) and GET /v1/ready (Postgres and Redis), per contracts/openapi.yaml.
 
-/v1/ready answers within the probe budget even when a dependency hangs. A probe that overruns is
-cancelled but not awaited: drivers may block for seconds while cleaning up a hung connection
-(psycopg waits up to 10 s for a query cancel), so the task finishes in the background while
-`ProbeTasks` holds it. While it is still running, the next check reports that dependency as
-failing at once instead of starting another probe, so hung connections never pile up.
+/v1/ready answers within the probe budget even when a dependency hangs:
+
+- Single flight: at most one probe task per dependency exists at a time. Concurrent requests
+  wait on the same task, each within its own budget; `ProbeTasks` holds it until it ends.
+- A probe that overruns is cancelled but not awaited: drivers may block for seconds while
+  cleaning up a hung connection (psycopg waits up to 10 s for a query cancel). Until that
+  cleanup ends, requests report the dependency as failing at once instead of probing again,
+  so hung connections and tasks never pile up.
 """
 
 import asyncio
@@ -47,33 +50,43 @@ class ReadyProblem(Problem):
 
 
 class ProbeTasks:
-    """Probes that overran their budget and are finishing their cleanup in the background."""
+    """The one live probe task per dependency, held from creation until it ends."""
 
     def __init__(self) -> None:
         self._tasks: dict[Dependency, asyncio.Task[None]] = {}
 
-    def busy(self, name: Dependency) -> bool:
+    def start(self, name: Dependency, probe: Probe) -> asyncio.Task[None] | None:
+        """Join the running probe, or start one. None while an overrun probe is cleaning up."""
         task = self._tasks.get(name)
-        return task is not None and not task.done()
-
-    def keep(self, name: Dependency, task: asyncio.Task[None]) -> None:
-        task.cancel()
+        if task is not None and not task.done():
+            return None if task.cancelling() else task
+        task = asyncio.create_task(probe(), name=f"ready-probe-{name}")
+        task.add_done_callback(partial(_finished, name))
         self._tasks[name] = task
-        task.add_done_callback(partial(_log_cleanup, name))
+        return task
+
+    def live(self) -> int:
+        return sum(not task.done() for task in self._tasks.values())
 
     async def drain(self, timeout_s: float) -> None:
-        """Give running cleanups a bounded chance to finish (used at shutdown)."""
+        """Give running probes a bounded chance to finish (used at shutdown)."""
         pending = [task for task in self._tasks.values() if not task.done()]
         if pending:
             await asyncio.wait(pending, timeout=timeout_s)
 
 
-def _log_cleanup(name: Dependency, task: asyncio.Task[None]) -> None:
+def _finished(name: Dependency, task: asyncio.Task[None]) -> None:
+    # Always retrieve the outcome, so no "Task exception was never retrieved" at any point.
     error = None if task.cancelled() else task.exception()
-    logger.debug(
-        "readiness probe cleanup finished",
-        extra={"check": name, "error": type(error).__name__ if error else None},
-    )
+    if not task.cancelling():
+        return  # finished within some request's budget; that request reported it
+    if error is None:
+        logger.debug("readiness probe cleanup finished", extra={"check": name})
+    else:
+        logger.warning(
+            "readiness probe cleanup failed",
+            extra={"check": name, "error": type(error).__name__},
+        )
 
 
 def get_settings(request: Request) -> Settings:
@@ -107,23 +120,24 @@ async def run_probes(
     failing: dict[Dependency, str] = {}
     tasks: dict[Dependency, asyncio.Task[None]] = {}
     for name, probe in probes.items():
-        if background.busy(name):
+        task = background.start(name, probe)
+        if task is None:
             failing[name] = "PreviousProbeStillRunning"
         else:
-            tasks[name] = asyncio.create_task(probe(), name=f"ready-probe-{name}")
+            tasks[name] = task
 
-    try:
-        if tasks:
-            await asyncio.wait(tasks.values(), timeout=timeout_s)
-    finally:
-        # On timeout, or if this request is cancelled, never await a probe's cleanup here.
-        for name, task in tasks.items():
-            if not task.done():
-                background.keep(name, task)
-                failing[name] = "TimeoutError"
+    # asyncio.wait never cancels the tasks it waits on, so a cancelled request leaves the shared
+    # probes running for other requests; ProbeTasks keeps them referenced.
+    if tasks:
+        await asyncio.wait(tasks.values(), timeout=timeout_s)
 
     for name, task in tasks.items():
-        if name not in failing and (error := task.exception()) is not None:
+        if not task.done():
+            task.cancel()  # stop the hung call; its cleanup is not awaited here
+            failing[name] = "TimeoutError"
+        elif task.cancelled():
+            failing[name] = "CancelledError"
+        elif (error := task.exception()) is not None:
             failing[name] = type(error).__name__
 
     return [_not_ready(name, failing[name]) for name in probes if name in failing]

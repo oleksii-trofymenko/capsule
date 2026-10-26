@@ -26,7 +26,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         try:
             yield
         finally:
-            # Probes that overran /v1/ready may still be closing their connections.
+            # Probes that overran /v1/ready may still be closing their connections. A psycopg
+            # cleanup that outlasts this bounded wait can log "Task was destroyed but it is
+            # pending" when the loop closes; that is bounded and acceptable at shutdown.
             await app.state.probe_tasks.drain(settings.ready_probe_timeout_s)
             try:
                 await app.state.redis.aclose()
