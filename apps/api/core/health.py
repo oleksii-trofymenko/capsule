@@ -3,7 +3,10 @@
 /v1/ready answers within the probe budget even when a dependency hangs:
 
 - Single flight: at most one probe task per dependency exists at a time. Concurrent requests
-  wait on the same task, each within its own budget; `ProbeTasks` holds it until it ends.
+  wait on the same task; `ProbeTasks` holds it until it ends. The first request whose budget
+  runs out cancels it, so for a request that joined later the budget effectively counts from
+  the probe's start: it may report the dependency failing although it would have answered
+  within that request's own budget. Accepted for a readiness check.
 - A probe that overruns is cancelled but not awaited: drivers may block for seconds while
   cleaning up a hung connection (psycopg waits up to 10 s for a query cancel). Until that
   cleanup ends, requests report the dependency as failing at once instead of probing again,
@@ -133,7 +136,10 @@ async def run_probes(
 
     for name, task in tasks.items():
         if not task.done():
-            task.cancel()  # stop the hung call; its cleanup is not awaited here
+            # Cancel once: a second cancel would interrupt the driver's cleanup of the hung
+            # connection (and let the next request probe the hung server again).
+            if not task.cancelling():
+                task.cancel()
             failing[name] = "TimeoutError"
         elif task.cancelled():
             failing[name] = "CancelledError"

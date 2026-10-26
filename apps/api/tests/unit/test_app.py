@@ -1,13 +1,15 @@
 """The app with fake readiness probes: no network (integration tests use real services)."""
 
 import asyncio
+import gc
 import json
+import logging
 import time
 
 import pytest
 from fastapi import FastAPI, HTTPException
 
-from core.health import Dependency, Probe, get_probes
+from core.health import Dependency, Probe, ProbeTasks, get_probes
 from main import create_app
 from tests.support import client_for, dummy_settings
 
@@ -257,11 +259,41 @@ async def test_probe_that_cancels_itself_reports_failing_not_500() -> None:
     assert response.json()["failing"] == ["redis"]
 
 
-async def test_failed_probe_outcome_is_always_retrieved() -> None:
-    app = _app_with({"postgres": _refused, "redis": _ok})
-    async with client_for(app) as client:
-        await client.get("/v1/ready")
-        task = app.state.probe_tasks._tasks["postgres"]
+async def test_late_joiner_does_not_interrupt_cleanup() -> None:
+    calls = 0
+    cleanup_completed = False
 
-    assert task.done()
-    assert task._log_traceback is False  # asyncio's "exception was never retrieved" flag
+    async def slow_cleanup() -> None:
+        nonlocal calls, cleanup_completed
+        calls += 1
+        try:
+            await asyncio.sleep(10)
+        except asyncio.CancelledError:
+            await asyncio.sleep(0.3)  # a second cancel landing here would cut the cleanup short
+            cleanup_completed = True
+            raise
+
+    app = _app_with({"postgres": slow_cleanup, "redis": _ok}, timeout_s=0.1)
+    async with client_for(app) as client:
+        first = asyncio.create_task(client.get("/v1/ready"))
+        await asyncio.sleep(0.05)  # the second request joins the same probe, budget ends later
+        second = await client.get("/v1/ready")
+        assert (await first).status_code == second.status_code == 503
+
+        await app.state.probe_tasks.drain(1.0)
+
+    assert cleanup_completed
+    assert calls == 1
+
+
+async def test_probe_failure_is_retrieved_even_without_a_waiting_request(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.ERROR, logger="asyncio")
+    tasks = ProbeTasks()
+    tasks.start("postgres", _refused)  # nobody awaits it, as after a cancelled request
+    await asyncio.sleep(0.01)
+    del tasks
+    gc.collect()
+
+    assert "exception was never retrieved" not in caplog.text
