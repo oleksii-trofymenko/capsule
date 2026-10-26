@@ -68,4 +68,4 @@ Every service runs as a fixed non-root user, with `cap_drop: [ALL]`, no added ca
 
 ## Runbook
 
-[`docs/runbooks/compose-stack.md`](../../docs/runbooks/compose-stack.md): stack not healthy, `.env` problems, pin drift, SeaweedFS exposure check, permission errors on data volumes, resetting volumes.
+[`docs/runbooks/compose-stack.md`](../../docs/runbooks/compose-stack.md): stack not healthy, `.env` problems, pin drift, SeaweedFS exposure check, permission errors on data volumes, resetting volumes, the CI `stack` job (E0-13), which runs `make up`, `check-seaweedfs.sh` and a restart on every PR that touches the stack.

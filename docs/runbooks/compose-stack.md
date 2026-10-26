@@ -43,6 +43,19 @@ The body lists the dependencies that are `failing`.
 
 An image pin in `.github/workflows/ci.yml`, `infra/compose/compose.base.yml` or `apps/api/Dockerfile` changed without the others. Make the Postgres/Redis references (tag and digest) and the uv version identical in the same PR.
 
+## CI job `stack` fails (E0-13)
+
+The `stack (compose smoke)` job in `.github/workflows/ci.yml` runs on PRs that touch `apps/api/`, `infra/compose/`, the `Makefile`, workflows, `contracts/` or `.pre-commit-config.yaml`, and on every `main` push and daily run. It uses throwaway secrets that env-init generates on the runner. They are masked in the log (`***`) and deleted at the end. The failing step tells you where to look:
+
+- `Throwaway secrets`: `.env.example` has a `change-me` key that env-init did not fill in. Run `bash infra/compose/env-init.sh .` locally on a copy.
+- `Pull images`: Docker Hub or GHCR is unreachable or rate-limited (`toomanyrequests`). Re-run the job. If it keeps failing, check the pins with `bash infra/compose/check-pins.sh`.
+- `Build api image`: the Dockerfile or `apps/api/uv.lock` is broken. Reproduce with `$C build api`.
+- `make up`: open `Dump stack logs` (`ps --all`, then the last 200 lines from each service) and follow "`make up` fails or times out" above. `not ready after 60 s` means a dependency failed `/v1/ready`. The api log names it.
+- `SeaweedFS lockdown check`: see "SeaweedFS exposure check fails" below. Treat any `FAIL` as a security regression in the PR.
+- `Restart keeps Postgres and Redis data`: after `make down` / `make up`, the job reads back a Postgres row and a Redis key, and expects `postgres: kept  redis: kept`. A missing value means a volume, `user:`, `read_only` or Redis AOF change lost data on restart. Reproduce locally under a throwaway project name, never `capsule`.
+
+The log dump shows only `ps` output and container logs. Do not add `compose config` or `docker inspect` to the job, because both print the interpolated secrets.
+
 ## Permission denied on a data volume (E0-12)
 
 postgres, redis and seaweedfs start as fixed non-root users with no capabilities (`infra/compose/README.md`, "Container privileges"). They cannot fix the ownership of their volume themselves. This only happens with a volume written by root, for example a restore or a manual copy. Volumes created by `make up` already have the right owner.
