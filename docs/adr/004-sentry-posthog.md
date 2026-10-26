@@ -1,6 +1,6 @@
 # ADR-004: Sentry for crashes and performance, PostHog for analytics and feature flags
 
-- Status: proposed
+- Status: accepted (2026-10-26)
 - Date: 2026-10-26
 - Deciders: Orchestrator, mobile-engineer, security-engineer, project owner
 - Related: E0-03, ADR-001, ADR-013 (planned), blueprint §1, §10, §11

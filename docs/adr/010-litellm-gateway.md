@@ -1,6 +1,6 @@
 # ADR-010: LiteLLM proxy as the provider-agnostic LLM gateway
 
-- Status: proposed
+- Status: accepted (2026-10-26)
 - Date: 2026-10-26
 - Deciders: Orchestrator, ai-engineer, security-engineer, project owner
 - Related: E0-03, ADR-007, ADR-009, ADR-011 (planned), ADR-012 (planned), ADR-013 (planned), ADR-015 (planned), blueprint §3, §4

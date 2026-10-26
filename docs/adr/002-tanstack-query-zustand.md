@@ -1,6 +1,6 @@
 # ADR-002: TanStack Query for server state and offline, Zustand for local state
 
-- Status: proposed
+- Status: accepted (2026-10-26)
 - Date: 2026-10-26
 - Deciders: Orchestrator, mobile-engineer, project owner
 - Related: E0-03, ADR-001, ADR-003, blueprint §4, §10
