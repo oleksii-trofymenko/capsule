@@ -4,11 +4,11 @@ Specs the mobile app is built from. No screen is built without one (`apps/mobile
 
 | File | What |
 | --- | --- |
-| `personas.md` | Four personas used to check flows, copy and evals |
-| `flows.md` | Every flow, step by step: screen, states, accessibility, analytics |
-| `onboarding-wireframes.md` | Low-fidelity wireframes for onboarding, guest sign-up and saved guides (not on the canvas) |
-| `copy-deck.md` | All en-GB strings for these flows, with ids |
-| `reference/*.png` | Exports of the owner's canvas: chat, guide, generating, offline, three onboarding-story slides |
+| [personas.md](personas.md) | Four personas used to check flows, copy and evals |
+| [flows.md](flows.md) | Every flow, step by step: screen, states, accessibility, analytics |
+| [onboarding-wireframes.md](onboarding-wireframes.md) | Low-fidelity wireframes for onboarding, guest sign-up, saved guides and sheets (not on the canvas) |
+| [copy-deck.md](copy-deck.md) | All en-GB strings for these flows, with ids |
+| [reference/](reference/) | Exports of the owner's canvas: [chat](reference/01-chat.png), [guide](reference/02-guide.png), [generating](reference/03-state-generating.png), [offline](reference/04-state-offline.png), and three story slides ([ask](reference/05-slide-1-ask.png), [photo](reference/06-slide-2-photo.png), [guide](reference/07-slide-3-guide.png)) |
 
 ## How to read
 

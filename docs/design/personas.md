@@ -2,7 +2,9 @@
 
 Four people who check every flow, string and eval scenario. They cover men and women, ages ~25, ~40 and ~55, menswear, womenswear and unisex, budgets from €60 to €150, and the event types in blueprint §1. No persona is described by looks or body; wardrobe is what each one chose in onboarding.
 
-Use them in reviews as a question: "Does this screen work for Ines at 200 % text size? For Leo, who only uses voice on the tram?"
+Use them in reviews as a question: "Does this screen work for Ines at 200 % text size? For Leo, who only uses voice on the tram? For Tomasz, who can't tell some reds from greens?"
+
+Accessibility needs are not age-specific: every screen must work at 200 % text, with a screen reader and by voice for all four personas, not only for Ines.
 
 | | Amara | Leo | Tomasz | Ines |
 | --- | --- | --- | --- | --- |
@@ -11,7 +13,8 @@ Use them in reviews as a question: "Does this screen work for Ines at 200 % text
 | Wardrobe chosen | Womenswear | Unisex | Menswear | Womenswear |
 | Budget | €100 | €60 | €150 | €80 |
 | Event | Job interview at a design studio | First date, dinner then a walk | A friend's outdoor summer wedding | Giving a talk at a sector conference |
-| Main input | Text | Voice | Photo + text | Voice + text, large text size |
+| Main input | Text | Voice (finds typing slow and tiring) | Photo + text | Voice + text |
+| Accessibility need | — | Voice as the main input | Red-green colour vision deficiency | Large text (200 %) |
 
 ## Amara, 25 — job interview
 
@@ -22,14 +25,14 @@ Use them in reviews as a question: "Does this screen work for Ines at 200 % text
 
 ## Leo, 24 — first date
 
-- **Context:** lives in Berlin, chose the unisex wardrobe because he buys from both sections. Sends voice notes while commuting.
+- **Context:** lives in Berlin, chose the unisex wardrobe because he buys from both sections. Finds typing on a phone slow and tiring, so he uses voice for almost everything, often while commuting.
 - **Goal:** look put together using what he owns; spend as little as possible.
 - **Frustration:** product lists without reasons; apps that make him type long answers on a moving tram.
 - **What Capsule must do:** accept a voice note as the whole request, ask at most two quick follow-ups as chips, and reuse his clothes from a photo.
 
 ## Tomasz, 41 — wedding guest
 
-- **Context:** project manager in Kraków. Owns a navy suit he wore to his own wedding.
+- **Context:** project manager in Kraków. Owns a navy suit he wore to his own wedding. Has red-green colour vision deficiency, so he relies on colour names, not swatches, and on status shown as text, not colour alone.
 - **Goal:** make the suit right for an outdoor summer wedding: what to change, what to keep.
 - **Frustration:** advice that assumes he will buy everything new; not knowing what a dress code like "summer formal" means.
 - **What Capsule must do:** build around the suit from his photo, explain the dress code in one line, and spend the €150 where it shows.
