@@ -43,6 +43,7 @@ jobs:
     outputs:
       api: ${{ steps.diff.outputs.api }}
       mobile: ${{ steps.diff.outputs.mobile }}
+      stack: ${{ steps.diff.outputs.stack }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -56,7 +57,7 @@ jobs:
           shared='^(\.github/workflows/|Makefile$|\.pre-commit-config\.yaml$|contracts/)'
           if [ "$EVENT" != "pull_request" ]; then
             echo "$EVENT: full run."
-            { echo "api=true"; echo "mobile=true"; } >> "$GITHUB_OUTPUT"
+            { echo "api=true"; echo "mobile=true"; echo "stack=true"; } >> "$GITHUB_OUTPUT"
             exit 0
           fi
           files=$(git diff --name-only HEAD^1 HEAD)
@@ -68,6 +69,7 @@ jobs:
           match() { grep -qE "$1|$shared" <<< "$files" && echo true || echo false; }
           echo "api=$(match '^(apps/api/|pyproject\.toml$|\.python-version$)')" >> "$GITHUB_OUTPUT"
           echo "mobile=$(match '^apps/mobile/')" >> "$GITHUB_OUTPUT"
+          echo "stack=$(match '^(apps/api/|infra/compose/|\.env\.example$)')" >> "$GITHUB_OUTPUT"
           cat "$GITHUB_OUTPUT"
 
   pr-title:
@@ -319,11 +321,75 @@ jobs:
       - if: steps.project.outputs.present == 'true'
         run: npm audit --prefix apps/mobile --audit-level=high
 
+  # E0-13: build the api image and run the real Compose stack (`make up`) with throwaway secrets,
+  # then the SeaweedFS lockdown check and a restart that must keep Postgres and Redis data.
+  # Triage: docs/runbooks/compose-stack.md, "CI job `stack` fails".
+  stack:
+    name: stack (compose smoke)
+    needs: changes
+    if: needs.changes.outputs.stack == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      # Same project and files as the Makefile; check-seaweedfs.sh expects the `capsule` project.
+      COMPOSE: docker compose --project-name capsule --env-file .env -f infra/compose/compose.base.yml
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # env-init writes random values for every `change-me` in .env.example and prints no value.
+      # Each one is masked here, before any later step can print it; `make up` reuses this .env.
+      - name: Throwaway secrets (generated and masked)
+        run: |
+          bash infra/compose/env-init.sh .
+          for key in $(sed -nE 's/^([A-Z0-9_]+)=change-me$/\1/p' .env.example); do
+            value=$(sed -nE "s/^${key}=(.*)$/\1/p" .env)
+            [ -n "$value" ] || { echo "::error::$key missing from .env"; exit 1; }
+            echo "::add-mask::$value"
+          done
+      - name: Pull images
+        run: |
+          $COMPOSE pull --quiet --ignore-buildable
+          # grpcurl is pinned only in check-seaweedfs.sh (GRPCURL=...); pre-pulled here so its time counts as pull.
+          docker pull --quiet "$(sed -nE 's/^GRPCURL=(.*)$/\1/p' infra/compose/check-seaweedfs.sh)"
+      - name: Build api image
+        run: $COMPOSE build api
+      - name: make up (health checks, then /v1/ready 200)
+        run: make up
+      - name: SeaweedFS lockdown check
+        run: bash infra/compose/check-seaweedfs.sh
+      # No S3 object read after the restart: it can fail for ~15-24 s until E0-14 lands.
+      - name: Restart keeps Postgres and Redis data
+        run: |
+          psql() { $COMPOSE exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -tA -c "$1"' sh "$1"; }
+          psql "CREATE TABLE ci_smoke (v text); INSERT INTO ci_smoke VALUES ('kept');"
+          test "$($COMPOSE exec -T redis redis-cli SET ci:smoke kept)" = "OK"
+          make down
+          make up
+          got_pg=$(psql "SELECT v FROM ci_smoke")
+          got_redis=$($COMPOSE exec -T redis redis-cli GET ci:smoke)
+          echo "postgres: ${got_pg:-<none>}  redis: ${got_redis:-<none>}"
+          test "$got_pg" = "kept" && test "$got_redis" = "kept"
+      # Container state and logs only. Never `compose config` or `docker inspect` here: both print
+      # the interpolated secrets. Keep the `service | ` prefix: a log line then cannot start with
+      # `::` and act as a workflow command. If `--no-log-prefix` is ever used, wrap the dump in
+      # `::stop-commands::<random token>` as the `changes` job does.
+      - name: Dump stack logs
+        if: failure() && hashFiles('.env') != ''
+        run: |
+          $COMPOSE ps --all
+          $COMPOSE logs --no-color --timestamps --tail=200
+      - name: Tear down
+        if: always()
+        run: |
+          [ ! -f .env ] || $COMPOSE down --volumes --remove-orphans
+          rm -f .env
+
   ci-ok:
     name: ci-ok
     if: always()
     # Must list every other job in this file; the first step fails the gate otherwise.
-    needs: [changes, pr-title, secrets, lint, unit-api, unit-mobile, integration, audit-api, audit-mobile]
+    needs: [changes, pr-title, secrets, lint, unit-api, unit-mobile, integration, audit-api, audit-mobile, stack]
     runs-on: ubuntu-24.04
     timeout-minutes: 2
     steps:
