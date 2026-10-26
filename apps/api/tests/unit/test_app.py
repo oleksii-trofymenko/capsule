@@ -179,3 +179,34 @@ async def test_unhandled_error_is_a_generic_problem_and_is_logged(
     assert "internal-marker" in error["exc"]
     access = next(line for line in lines if line["msg"] == "request")
     assert access == access | {"path": "/test/boom", "status": 500, "request_id": "rid-500"}
+
+
+async def test_probe_with_slow_cleanup_is_not_awaited_or_restarted() -> None:
+    calls = 0
+
+    async def slow_cleanup() -> None:
+        nonlocal calls
+        calls += 1
+        try:
+            await asyncio.sleep(10)
+        except asyncio.CancelledError:
+            await asyncio.sleep(0.3)  # like psycopg cancelling a query on a hung connection
+            raise
+
+    app = _app_with({"postgres": slow_cleanup, "redis": _ok}, timeout_s=0.05)
+    async with client_for(app) as client:
+        started = time.perf_counter()
+        first = await client.get("/v1/ready")
+        second = await client.get("/v1/ready")
+        elapsed = time.perf_counter() - started
+
+        assert [first.status_code, second.status_code] == [503, 503]
+        assert second.json()["failing"] == ["postgres"]
+        assert elapsed < 0.25  # neither call waited for the 0.3 s cleanup
+        assert calls == 1  # no second probe while the first is still cleaning up
+
+        await app.state.probe_tasks.drain(1.0)
+        third = await client.get("/v1/ready")
+
+    assert third.status_code == 503
+    assert calls == 2

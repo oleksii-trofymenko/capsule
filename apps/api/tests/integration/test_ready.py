@@ -4,7 +4,10 @@
 dependency stays real.
 """
 
+import asyncio
 import os
+import time
+from urllib.parse import urlsplit, urlunsplit
 
 import httpx
 import pytest
@@ -13,6 +16,7 @@ from sqlalchemy.engine import make_url
 
 from core.config import ConfigError, Settings
 from main import create_app
+from tests.integration.tcp_proxy import StallingProxy
 from tests.support import assert_matches_contract, client_for
 
 pytestmark = [pytest.mark.integration, pytest.mark.anyio]
@@ -83,3 +87,59 @@ async def test_repeated_checks_reuse_the_pool_and_release_connections(settings: 
         assert statuses == [200] * 5
         assert pool.checkedout() == 0
         assert pool.checkedin() == 1
+
+
+# A server that stops answering: /v1/ready must still answer within the budget (+ margin),
+# before a connection exists and on an established pooled one, and recover without leaks.
+STALL_BUDGET_S = 0.3
+STALL_MARGIN_S = 0.25
+
+
+def _via_proxy(url: str, port: int) -> str:
+    parts = urlsplit(url)
+    userinfo = parts.netloc.rpartition("@")[0]
+    netloc = f"{userinfo}@127.0.0.1:{port}" if userinfo else f"127.0.0.1:{port}"
+    return urlunsplit(parts._replace(netloc=netloc))
+
+
+@pytest.mark.parametrize("when", ["before-connect", "established"])
+@pytest.mark.parametrize("dependency", ["postgres", "redis"])
+async def test_ready_answers_within_budget_when_a_dependency_stops_answering(
+    settings: Settings, dependency: str, when: str
+) -> None:
+    field = "database_url" if dependency == "postgres" else "redis_url"
+    url = getattr(settings, field).get_secret_value()
+    upstream = urlsplit(url)
+    default_port = 5432 if dependency == "postgres" else 6379
+    proxy = StallingProxy(upstream.hostname or "127.0.0.1", upstream.port or default_port)
+
+    async with proxy.running():
+        app = create_app(
+            settings.model_copy(
+                update={
+                    field: SecretStr(_via_proxy(url, proxy.port)),
+                    "ready_probe_timeout_s": STALL_BUDGET_S,
+                }
+            )
+        )
+        async with client_for(app, lifespan=True) as client:
+            if when == "established":
+                assert (await client.get("/v1/ready")).status_code == 200
+            proxy.stall()
+
+            # The second call meets the first probe still cleaning up (or a fresh stall).
+            for _ in range(2):
+                started = time.perf_counter()
+                response = await client.get("/v1/ready")
+                elapsed = time.perf_counter() - started
+
+                assert response.status_code == 503
+                assert response.json()["failing"] == [dependency]
+                assert elapsed <= STALL_BUDGET_S + STALL_MARGIN_S
+
+            proxy.resume()
+            await app.state.probe_tasks.drain(5.0)
+
+            assert (await client.get("/v1/ready")).status_code == 200
+            assert app.state.engine.pool.checkedout() == 0
+            assert not [t for t in asyncio.all_tasks() if t.get_name().startswith("ready-probe")]

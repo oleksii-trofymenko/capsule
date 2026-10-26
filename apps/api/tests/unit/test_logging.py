@@ -2,7 +2,9 @@ import json
 import logging
 import sys
 
-from core.logging import JsonFormatter, request_id_var
+import pytest
+
+from core.logging import QUIET_LOGGERS, JsonFormatter, configure_logging, request_id_var
 
 
 def _record(**extra: object) -> logging.LogRecord:
@@ -46,3 +48,18 @@ def test_includes_the_exception_trace() -> None:
 
     payload = json.loads(JsonFormatter().format(record))
     assert "ValueError: boom" in payload["exc"]
+
+
+def test_third_party_loggers_only_pass_warnings(capsys: pytest.CaptureFixture[str]) -> None:
+    configure_logging("DEBUG")
+
+    logging.getLogger("httpx").info("HTTP Request: GET http://test/v1/ready?email=someone")
+    logging.getLogger("psycopg.pool").debug("connection details")
+    logging.getLogger("sqlalchemy.engine").info("SELECT 1")
+    logging.getLogger("redis").warning("redis is slow")
+    logging.getLogger("capsule.test").debug("own debug line")
+
+    messages = [json.loads(line)["msg"] for line in capsys.readouterr().out.splitlines()]
+    assert messages == ["redis is slow", "own debug line"]
+    for name in QUIET_LOGGERS:
+        assert logging.getLogger(name).getEffectiveLevel() == logging.WARNING

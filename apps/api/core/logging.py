@@ -16,6 +16,9 @@ request_id_var: ContextVar[str | None] = ContextVar("request_id", default=None)
 # `extra=` keys that may appear in a log line. Keep them free of personal data.
 ALLOWED_EXTRA = ("method", "path", "status", "duration_ms", "check", "error")
 
+# Libraries that log URLs, queries or connection details at INFO/DEBUG; only warnings pass.
+QUIET_LOGGERS = ("httpx", "httpcore", "psycopg", "sqlalchemy", "redis")
+
 
 class JsonFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
@@ -44,3 +47,5 @@ def configure_logging(level: str) -> None:
     root = logging.getLogger()
     root.handlers[:] = [h for h in root.handlers if not isinstance(h, JsonHandler)] + [handler]
     root.setLevel(level)
+    for name in QUIET_LOGGERS:
+        logging.getLogger(name).setLevel(logging.WARNING)

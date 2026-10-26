@@ -26,6 +26,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         try:
             yield
         finally:
+            # Probes that overran /v1/ready may still be closing their connections.
+            await app.state.probe_tasks.drain(settings.ready_probe_timeout_s)
             try:
                 await app.state.redis.aclose()
             finally:
@@ -41,6 +43,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         redoc_url=None,
     )
     app.state.settings = settings
+    app.state.probe_tasks = health.ProbeTasks()
     install_problem_handlers(app)
     app.add_middleware(RequestContextMiddleware)
     app.include_router(health.router)

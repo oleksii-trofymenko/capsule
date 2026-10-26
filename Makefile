@@ -21,6 +21,8 @@ test: ## Unit and integration tests (throwaway Postgres and Redis unless CAPSULE
 ifneq ($(and $(CAPSULE_TEST_DATABASE_URL),$(CAPSULE_TEST_REDIS_URL)),)
 	@DATABASE_URL="$$CAPSULE_TEST_DATABASE_URL" REDIS_URL="$$CAPSULE_TEST_REDIS_URL" $(PYTEST)
 else
+	@[ -z "$$CAPSULE_TEST_DATABASE_URL$$CAPSULE_TEST_REDIS_URL" ] || echo "warning: only one \
+	CAPSULE_TEST_*_URL is set; set both to use them. Using throwaway containers." >&2
 	@trap '$(TEST_SERVICES) down' EXIT; trap 'exit 130' INT TERM; \
 	$(TEST_SERVICES) up && \
 	DATABASE_URL=postgresql://capsule:capsule@127.0.0.1:$${CAPSULE_TEST_PG_PORT:-55432}/capsule_test \
