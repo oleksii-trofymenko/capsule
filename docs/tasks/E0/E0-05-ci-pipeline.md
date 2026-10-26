@@ -41,5 +41,6 @@ Every PR gets the same automatic checks, so "works on my machine" never reaches 
 
 - Plan approved:
 - Decisions:
+  - From E0-01 (2026-10-26): ruleset `main` already requires a PR, linear history and squash merge only. This card only adds the CI jobs as required status checks to that ruleset.
 - Numbers:
 - Left for later:
