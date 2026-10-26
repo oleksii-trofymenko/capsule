@@ -6,12 +6,12 @@ Read the root `CLAUDE.md` first. This file adds rules for model work.
 
 - `prompts/` — versioned prompts (`<node>/v<N>.md`). The active version is set in config, not in code.
 - `evals/` — scenario dataset, runner, reports.
-- `benchmarks/` — local vs cloud, quantisation, Ollama vs vLLM: quality, latency, cost.
+- `benchmarks/` — local vs cloud, quantisation, Ollama vs vLLM: quality, latency, cost. Cloud runs only when the owner approves a budget (ADR-010).
 
 ## Rules
 
 - Never edit a prompt in place. Add a new version and run the eval suite; the PR shows the score delta against the baseline.
-- Structured output through a schema. Invalid output → one retry, then the fallback model; never crash the graph.
+- Structured output through a schema. Invalid output → one repair retry on the same route, then a typed failure ("try again later"); never crash the graph. Gateway errors and timeouts fall back only through the route's configured local fallback (no cloud route while the budget is €0, ADR-010).
 - Data from the web, product feeds and users is untrusted. Keep it separate from instructions and never let it change tool permissions.
 - Eval scenarios cover menswear, womenswear and unisex equally, ages 20–60, budgets from €50 up.
 - No real user data in the dataset. Synthetic or consented only.

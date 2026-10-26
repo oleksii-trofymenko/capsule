@@ -12,6 +12,6 @@ description: Build an Expo screen from an approved design spec with all states, 
 5. **Tokens.** Colours, type, spacing, radius and shadow come from the design tokens. No raw hex values in components.
 6. **Accessibility.** `accessibilityLabel` on icon buttons, roles on custom controls, touch targets ≥ 44 pt / 48 dp, text scales with Dynamic Type, contrast AA.
 7. **Performance.** Lists use FlashList; animations use Reanimated; no heavy work on mount.
-8. **Platform feel.** Native back gesture, safe areas, keyboard avoidance, light and dark appearance if the spec has both.
+8. **Platform feel.** Native back gesture, safe areas, keyboard avoidance, light and dark appearance from `theme[scheme]` tokens (both themes exist, E0-09).
 9. **Tests.** RNTL tests for state switching and interactions; a Maestro flow if the screen is on a critical path.
 10. **Evidence.** Screenshots of every state on iOS and Android in the PR, for the design review.

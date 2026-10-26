@@ -5,7 +5,7 @@ description: Write and run a k6 load scenario and report where latency breaks an
 
 # Load test
 
-1. **Scenario.** A k6 script in `infra/k6/` that follows a real user path (sign in → ask → follow-up → guide), with think time.
+1. **Scenario.** A k6 script in `infra/k6/` that follows a real user path (guest start → ask → follow-up → guide → save with sign-up), with think time.
 2. **Targets.** Thresholds from `docs/metrics.md`: p95/p99 per endpoint, error rate.
 3. **Steps.** Run at 10, 25 and 50 virtual users, a few minutes each, against the home server (never against shared or third-party services).
 4. **Watch.** Grafana during the run: GPU and VRAM, queue depth, CPU, DB connections, Redis.

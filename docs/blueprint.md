@@ -2,7 +2,7 @@
 
 > **Implementation copy.** The project owner keeps the working version of this blueprint as a private doc. This file is the English version for implementation, current as of 2026-10-26.
 >
-> **Precedence:** an accepted ADR in `docs/adr/` and the root `CLAUDE.md` win over this file. Known differences from the owner's version: the Orchestrator is the main Claude Code session, not a subagent; Go is optional and needs a benchmark plus an ADR before use; accepted ADRs and owner decisions changed some choices (2026-10-26) — Python 3.13 (ADR-005), SAQ worker (ADR-006), SeaweedFS instead of MinIO with media deleted within 24 h and never backed up (ADR-008), MMKV-only mobile cache with SQLite deferred (ADR-003), no cloud LLM fallback while the budget is €0 (ADR-010), CI service containers instead of Testcontainers (ADR-016); guest first — sign-up after the first guide, so activation and time to first guide are measured from onboarding (E0-08, `docs/metrics.md`). When the owner's version changes, update this file in its own commit (`docs(blueprint): …`).
+> **Precedence:** an accepted ADR in `docs/adr/` and the root `CLAUDE.md` win over this file. Known differences from the owner's version: the Orchestrator is the main Claude Code session, not a subagent; Go is optional and needs a benchmark plus an ADR before use; accepted ADRs and owner decisions changed some choices (2026-10-26) — Python 3.13 (ADR-005), SAQ worker (ADR-006), SeaweedFS instead of MinIO with media deleted within 24 h and never backed up (ADR-008), MMKV-only mobile cache with SQLite deferred (ADR-003), no cloud LLM fallback while the budget is €0 (ADR-010), CI service containers instead of Testcontainers (ADR-016); guest first — sign-up after the first guide, so activation and time to first guide are measured from onboarding (E0-08, `docs/metrics.md`); consent-gated Sentry and PostHog with two opt-in switches (E0-08); Plus Jakarta Sans and a dark theme (E0-09); staged rollout through store channels and EAS Update, not flags (ADR-004); one CI workflow with the required check `ci-ok` (ADR-019); LLM fallbacks are local routes or "try again later" (ADR-010). When the owner's version changes, update this file in its own commit (`docs(blueprint): …`).
 
 ## 1. The problem we solve
 
@@ -79,7 +79,7 @@ The stack follows "boring, proven technology plus one flexible layer over the mo
 | Mobile | Expo (React Native) + TypeScript strict, Expo Router | One codebase for iOS and Android, OTA updates, EAS Build | ADR-001 |
 | Mobile: state and data | TanStack Query (server state + offline cache), Zustand (local state) | Caching, retry and sync out of the box | ADR-002 |
 | Mobile: storage | expo-secure-store (Keychain/Keystore, this device only) for tokens, MMKV for the query cache; SQLite deferred | Tokens never in plain storage | ADR-003 |
-| Mobile: quality | Sentry (crashes + performance), PostHog (analytics, feature flags) | Crash-free rate, flags, staged rollout | ADR-004 |
+| Mobile: quality | Sentry (crashes + performance), PostHog (analytics, feature flags) | Crash-free rate, feature flags (consent-gated) | ADR-004 |
 | API | Python 3.13, FastAPI, Pydantic v2, OpenAPI 3.1 as the contract | Async, generated contract and mobile types | ADR-005 |
 | Background jobs | Redis + SAQ worker | Photo, audio and generation never block HTTP | ADR-006 |
 | Database | PostgreSQL 16 + pgvector, Alembic migrations, SQLAlchemy 2 (async) | One database for data, memory and RAG; fewer moving parts | ADR-007 |
@@ -146,7 +146,7 @@ capsule/
 │   ├── compose/               # compose.base / .local-gpu / .cloud / .observability / .tunnel
 │   ├── grafana/               # dashboards as code
 │   └── k6/                    # load scenarios
-└── .github/workflows/         # CI: lint, test, eval, build, release
+└── .github/workflows/         # ci.yml: one workflow, required check ci-ok (ADR-019)
 ```
 
 **Backend dependency rule:** modules talk only through a module's public interface (its service) and never touch another module's tables. This keeps the option to split a module out later if the numbers demand it.
@@ -174,10 +174,10 @@ Follow-up questions return to request parsing; going over budget returns to prod
 
 **Rules for every node:**
 
-- Input and output are Pydantic schemas; invalid model output → one retry, then the fallback model.
-- A timeout per node and for the whole graph; state checkpointed in Postgres so the conversation resumes after a follow-up.
+- Input and output are Pydantic schemas; invalid model output → one repair retry, then a typed failure ("try again later"). Gateway errors and per-route timeouts (the busy-GPU signal) fall back to the route's configured local fallback; no cloud route while the budget is €0 (ADR-010).
+- Timeouts nest: gateway route < node < whole graph; state checkpointed in Postgres so the conversation resumes after a follow-up or a "try again later".
 - Every model call is traced in Langfuse with node name, model, tokens and latency.
-- Model routing: request parsing and follow-ups use a small fast model; guide generation uses the best local or cloud model.
+- Model routing: request parsing and follow-ups use the `agent-parse` route; guide generation uses `agent-guide` (local only while the budget is €0, ADR-010).
 - Photo analysis describes clothes, colours and silhouette; it never rates appearance or infers sensitive traits.
 
 ## 7. The development agent team
@@ -226,7 +226,7 @@ The harness is the frame every agent works in: what it reads at start, which act
 ### Rules (excerpt for CLAUDE.md)
 
 - One task = one branch = one PR = one feature. Nothing "while I'm here".
-- No overcoding: no abstraction, config or dependency the task does not need. A new dependency = an ADR.
+- No overcoding: no abstraction, config or dependency the task does not need. A new dependency = an ADR, unless §4 or an accepted ADR already names it.
 - Plan first (3–7 steps + risks), then code. The Orchestrator approves the plan.
 - Contract first: an API change starts in `contracts/openapi.yaml`.
 - Tests in the same PR. No tests, no PR.
@@ -302,7 +302,7 @@ Every feature takes the same path. Going back a step is a normal part of the pro
 - TypeScript strict, no `any`; API types generated from OpenAPI, not hand-written.
 - Heavy work off the JS thread: Reanimated for animation, FlashList for lists, memoisation only where a measured problem exists.
 - Every screen has loading / empty / error / offline states.
-- Tokens only in SecureStore; nothing sensitive in AsyncStorage, logs or Sentry breadcrumbs.
+- Tokens only in SecureStore; MMKV holds no credentials or photos (ADR-003); nothing sensitive in logs or Sentry breadcrumbs.
 - Accessibility: labels, touch targets ≥ 44 pt (iOS) / 48 dp (Android), Dynamic Type.
 - Permissions (camera, microphone, photos) requested at the moment of need, with a reason.
 - New dependencies checked for bundle size and Expo support.
@@ -324,7 +324,7 @@ Every requirement has a numeric target and a way to check it. LLM generation has
 
 | Requirement | Target | How we check |
 | --- | --- | --- |
-| Cold start | < 2 s on a mid-range Android (release build) | Sentry App Start, manual timing on a real device |
+| Cold start | < 2 s on a mid-range Android (release build) | Sentry App Start (users who allowed crash reports), manual timing on a real device |
 | Smoothness | 60 fps (120 on ProMotion), < 1% slow frames | Sentry slow/frozen frames, Perf Monitor |
 | App size | Installed < 60 MB (guideline) | EAS Build report, checked in CI |
 | Memory | No growth after a 10-minute session | Xcode Instruments / Android Profiler |
@@ -332,9 +332,9 @@ Every requirement has a numeric target and a way to check it. LLM generation has
 | Offline | Guide history available offline; queued messages sent on reconnect | Maestro flow with the network off |
 | Security | Tokens in Keychain/Keystore; certificate pinning for the API; obfuscation (Hermes bytecode + R8); zero secrets in the bundle | Security checklist, bundle scan |
 | Stability | Crash-free sessions > 99.5% (users who allowed crash reports) | Sentry Release Health |
-| Guidelines | Native navigation, back gestures, system fonts, dark theme | Manual HIG / Material checklist before release |
+| Guidelines | Native navigation, back gestures, Plus Jakarta Sans with Dynamic Type scaling, dark theme | Manual HIG / Material checklist before release |
 | Store requirements | Privacy manifest (iOS), Data safety (Google Play), permission explanations, in-app account deletion | Checklist before submission |
-| Updates | Forced update by minimum version; feature flags; staged rollout 10% → 50% → 100% | API config + PostHog flags + EAS Update |
+| Updates | Forced update by minimum version; feature flags; staged rollout 10% → 50% → 100% | API config + PostHog flags (gating) + Play staged rollout, App Store phased release, `eas update --rollout-percentage` (ADR-004) |
 
 ### Backend
 
@@ -349,7 +349,7 @@ Every requirement has a numeric target and a way to check it. LLM generation has
 | Stability | Idempotency keys for POST, retry with backoff, a timeout on every external call, circuit breaker, graceful degradation (no GPU → a "try again later" message; cloud once the budget allows, ADR-010) | Chaos tests: stop Ollama, Redis |
 | Security | OWASP API Top 10, all input validated, parameterised queries, JWT + refresh rotation, rate limiting, sensitive fields encrypted, secrets outside code | Security checklist, scanners (bandit, pip-audit, gitleaks) |
 | API | OpenAPI contract, `/v1` versioning, one error format | Contract tests in CI |
-| Observability | Structured JSON logs, RED metrics, OpenTelemetry traces, `/health` and `/ready` | Grafana dashboard |
+| Observability | Structured JSON logs, RED metrics, OpenTelemetry traces, `/v1/health` and `/v1/ready` | Grafana dashboard |
 | Tests | Unit ≥ 80% coverage of domain logic; integration with a real database; load tests before release | CI + k6 report |
 
 ## 11. Observability and personal verification
@@ -362,7 +362,7 @@ Goal: the project owner opens one dashboard and explains in two minutes, with nu
 | --- | --- | --- |
 | Product | Activation, time to first guide, helpful rate, budget compliance, CTR | Are we solving the user's problem? |
 | API (RED) | Rate, errors, duration p50/p95/p99 per endpoint | Is the backend fast and stable? |
-| AI / LLM | TTFT, tokens/s, tokens per guide, share of cloud fallback, parse errors, cost | Which model, what cost, where is it slow? |
+| AI / LLM | TTFT, tokens/s, tokens per guide, fallback rate per route, parse errors, cost | Which model, what cost, where is it slow? |
 | GPU server | GPU load, VRAM, temperature, job queue, CPU, RAM, disk | Will the hardware hold, and when to upgrade? |
 | Quality | Eval score by prompt and model version, trend | Did the change make it better? |
 | Mobile (Sentry) | Crash-free rate, app start, slow frames per release | Is the app good in users' hands? |
@@ -373,12 +373,13 @@ Goal: the project owner opens one dashboard and explains in two minutes, with nu
 - Full guide p95 more than 50% over target for 10 minutes.
 - Job queue > 20, or the oldest job > 2 minutes.
 - GPU temperature > 83 °C or VRAM > 95%.
-- Cloud fallback > 30% of requests (local inference degrading).
+- (Proposed, owner to confirm) "Try again later" answers > 1% of consultations for 10 minutes (protects the 99% availability target in `docs/metrics.md`).
+- (Proposed, owner to confirm) Gateway fallback rate on any route > 30% for 10 minutes (local inference degrading; ADR-010).
 - Crash-free rate of a new release < 99.5%.
 
 ### How the project owner tests personally
 
-1. **From scratch:** one command brings up the whole stack; `/ready` returns OK.
+1. **From scratch:** one command brings up the whole stack; `/v1/ready` returns OK.
 2. **Smoke flow on the phone:** as a guest, "date night look, €100" → follow-up → photo → guide → save (sign up). Find the request in Langfuse and see each agent step with time and tokens.
 3. **Eval:** one command runs 50–100 scenarios and reports mean score, budget compliance and the 5 worst answers.
 4. **Load:** k6 at 10 / 25 / 50 virtual users; see where p95 breaks and what saturates (GPU, queue, database).
@@ -434,28 +435,28 @@ One epic = one chat with the Orchestrator. Each item below is one task, one bran
 
 ### E0. Foundation and harness
 
-- [ ] Monorepo, folder structure, "run in 5 minutes" README
-- [ ] CLAUDE.md (root and modules), agent definitions, task card, PR and ADR templates
-- [ ] ADR-001…ADR-010 for the core stack
-- [ ] Pre-commit: Ruff, mypy, ESLint, Prettier, gitleaks
-- [ ] CI: lint + typecheck + (empty) tests green
-- [ ] `compose.base`: api (health), postgres, redis, seaweedfs
-- [ ] Design: personas (men and women aged 20–60), key user flows, MVP wireframes
-- [ ] Design system: tokens (colour, type, spacing), base components, light and dark theme
+- [x] Monorepo, folder structure, "run in 5 minutes" README
+- [x] CLAUDE.md (root and modules), agent definitions, task card, PR and ADR templates
+- [x] ADR-001…ADR-010 for the core stack
+- [x] Pre-commit: Ruff, mypy, ESLint, Prettier, gitleaks
+- [x] CI: lint + typecheck + (empty) tests green
+- [x] `compose.base`: api (health), postgres, redis, seaweedfs
+- [x] Design: personas (men and women aged 20–60), key user flows, MVP wireframes
+- [x] Design system: tokens (colour, type, spacing), base components, light and dark theme
 
 ### E1. Security and users
 
 - [ ] Threat model and `security.md`
-- [ ] Sign-up/sign-in, JWT + rotating refresh tokens
+- [ ] Guest credential, then sign-up/sign-in with JWT + rotating refresh tokens; guest-data retention ADR, "Delete my data" (E0-08)
 - [ ] Rate limiting and one error format
-- [ ] Expo app: navigation, sign-in screens, SecureStore
+- [ ] Expo app: navigation, guest start, save-with-sign-up and sign-in screens, SecureStore
 - [ ] Cloudflare Tunnel to the PC server
 
 ### E2. Observability (before the first AI feature)
 
 - [ ] OpenTelemetry in the API and worker, structured logs
 - [ ] `compose.observability`, API (RED) and GPU server dashboards
-- [ ] Sentry and PostHog in the mobile app, activation events
+- [ ] Sentry and PostHog in the mobile app behind two opt-in consent switches (E0-08, ADR-004), activation events
 - [ ] Basic alerts
 
 ### E3. MVP consultation (text)

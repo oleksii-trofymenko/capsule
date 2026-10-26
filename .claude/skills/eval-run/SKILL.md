@@ -5,9 +5,9 @@ description: Run the eval suite and produce a comparable report with deltas agai
 
 # Eval run
 
-1. **Pin the setup.** Record prompt versions, model aliases and the models they resolve to, quantisation, gateway config, git SHA.
+1. **Pin the setup.** Record prompt versions, gateway route names (`agent-parse`, `agent-guide`, `vision`, `embed`; ADR-010) and the models they resolve to, quantisation, the Ollama settings that shape VRAM (context length, parallel requests, models kept loaded), the gateway config hash and the git SHA.
 2. **Run.** `make eval` (or the runner in `ml/evals/` with a filter for a quick subset while iterating; the full suite for the PR).
-3. **Metrics.** Mean quality score (LLM-as-judge, 1–5), budget compliance, structure validity, hallucinated products, p50/p95 latency, tokens per guide.
+3. **Metrics.** Mean quality score (LLM-as-judge, 1–5), budget compliance, structure validity, hallucinated products, p50/p95 latency, tokens per guide, fallback rate per route and "try again later" count (a run with fallbacks is not comparable to the baseline until they are explained).
 4. **Slices.** Show the score by wardrobe (menswear, womenswear, unisex), by event and by budget band. A drop in one slice is a regression even if the mean rises.
 5. **Worst cases.** List the 5 lowest-scored answers with the judge's reason.
 6. **Compare.** Delta against the baseline report in `ml/evals/reports/baseline.json`.
