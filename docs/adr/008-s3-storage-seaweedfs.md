@@ -1,6 +1,6 @@
 # ADR-008: S3 API for media; SeaweedFS on the home server; deletion within 24 h enforced by our own job
 
-- Status: proposed
+- Status: accepted (2026-10-26)
 - Date: 2026-10-26
 - Deciders: Orchestrator, backend-engineer, security-engineer, project owner
 - Related: E0-03, ADR-005, ADR-006, ADR-014 (planned), ADR-015 (planned), blueprint §3, §4, §12, §14

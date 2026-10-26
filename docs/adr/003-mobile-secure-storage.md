@@ -1,6 +1,6 @@
 # ADR-003: Tokens in expo-secure-store (this device only); query cache in MMKV
 
-- Status: proposed
+- Status: accepted (2026-10-26)
 - Date: 2026-10-26
 - Deciders: Orchestrator, mobile-engineer, security-engineer, project owner
 - Related: E0-03, ADR-001, ADR-002, ADR-014 (planned), blueprint §10

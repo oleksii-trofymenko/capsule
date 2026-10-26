@@ -1,6 +1,6 @@
 # ADR-006: Redis for queue, cache and rate limits; SAQ as the background worker
 
-- Status: proposed
+- Status: accepted (2026-10-26)
 - Date: 2026-10-26
 - Deciders: Orchestrator, backend-engineer, project owner
 - Related: E0-03, ADR-005, ADR-009, blueprint §3, §4, §10

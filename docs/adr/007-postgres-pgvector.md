@@ -1,6 +1,6 @@
 # ADR-007: PostgreSQL 16 + pgvector as the single database; SQLAlchemy 2 (async) and Alembic
 
-- Status: proposed
+- Status: accepted (2026-10-26)
 - Date: 2026-10-26
 - Deciders: Orchestrator, backend-engineer, ai-engineer, project owner
 - Related: E0-03, ADR-005, ADR-009, ADR-010, blueprint §3, §4, §6, §10

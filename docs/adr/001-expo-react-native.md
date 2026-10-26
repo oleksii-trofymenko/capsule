@@ -1,6 +1,6 @@
 # ADR-001: Expo (React Native) with TypeScript strict and Expo Router for the mobile app
 
-- Status: proposed
+- Status: accepted (2026-10-26)
 - Date: 2026-10-26
 - Deciders: Orchestrator, mobile-engineer, project owner
 - Related: E0-03, ADR-002, ADR-003, ADR-004, blueprint §4, §10
