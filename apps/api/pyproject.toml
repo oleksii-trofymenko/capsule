@@ -9,6 +9,7 @@ dependencies = [
   "sqlalchemy[asyncio]>=2.1.5,<2.2",  # ADR-007
   "psycopg[binary]>=3.3.6,<4",        # ADR-007, ADR-009 (one driver for SQLAlchemy and LangGraph)
   "redis>=8.1,<9",                    # ADR-006
+  "uvicorn>=0.54,<1",                 # ADR-021: ASGI server (no [standard] extras)
 ]
 
 [dependency-groups]
