@@ -345,7 +345,7 @@ Every requirement has a numeric target and a way to check it. LLM generation has
 | 30-second voice note | p95 < 5 s | Worker metric |
 | Availability | 99% for the home server (higher with cloud fallback once the budget allows, ADR-010) | External uptime monitor |
 | Database | An index for every frequent query, EXPLAIN in the PR, connection pool, no N+1 | Code review, pg_stat_statements |
-| Stability | Idempotency keys for POST, retry with backoff, a timeout on every external call, circuit breaker, graceful degradation (no GPU → cloud or a "try again later" message) | Chaos tests: stop Ollama, Redis |
+| Stability | Idempotency keys for POST, retry with backoff, a timeout on every external call, circuit breaker, graceful degradation (no GPU → a "try again later" message; cloud once the budget allows, ADR-010) | Chaos tests: stop Ollama, Redis |
 | Security | OWASP API Top 10, all input validated, parameterised queries, JWT + refresh rotation, rate limiting, sensitive fields encrypted, secrets outside code | Security checklist, scanners (bandit, pip-audit, gitleaks) |
 | API | OpenAPI contract, `/v1` versioning, one error format | Contract tests in CI |
 | Observability | Structured JSON logs, RED metrics, OpenTelemetry traces, `/health` and `/ready` | Grafana dashboard |
@@ -510,7 +510,7 @@ The log is updated at the end of every epic. The biggest MVP risk is a source of
 | --- | --- | --- | --- |
 | No legal, stable source of products and prices | High | High | Early spike: affiliate APIs (e.g. affiliate networks), search APIs; scraping only where the site allows it |
 | 16 GB VRAM is not enough for all models at once | High | Medium | VRAM budget, STT and embeddings on CPU, one multimodal model instead of two, cloud fallback once the budget allows (ADR-010) |
-| Local models are worse than cloud models | Medium | Medium | Evals compare; route hard requests to the cloud |
+| Local models are worse than cloud models | Medium | Medium | Evals compare; route hard requests to the cloud once the budget allows (ADR-010) |
 | Home server unavailable (power, internet, updates) | Medium | Medium | UPS, uptime monitor, cloud API fallback once the budget allows (ADR-010), an honest 99% SLO |
 | Photo privacy and store requirements | Medium | High | TTL deletion, no appearance rating, privacy manifest, user consent |
 | Prompt injection through product descriptions or trends | Medium | Medium | Separate instructions from data, sanitise, check output in code |
