@@ -1,6 +1,6 @@
 # ADR-009: LangGraph for the agent graph
 
-- Status: proposed
+- Status: accepted (2026-10-26)
 - Date: 2026-10-26
 - Deciders: Orchestrator, ai-engineer, project owner
 - Related: E0-03, ADR-005, ADR-006, ADR-007, ADR-010, blueprint §6

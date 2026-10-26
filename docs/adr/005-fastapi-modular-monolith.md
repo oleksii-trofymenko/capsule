@@ -1,6 +1,6 @@
 # ADR-005: Python 3.13 + FastAPI modular monolith; OpenAPI 3.1 as the contract
 
-- Status: proposed
+- Status: accepted (2026-10-26)
 - Date: 2026-10-26
 - Deciders: Orchestrator, backend-engineer, project owner
 - Related: E0-03, E0-06, ADR-006, ADR-007, ADR-009, blueprint §3, §5, §10
