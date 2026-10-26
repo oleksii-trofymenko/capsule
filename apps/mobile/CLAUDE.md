@@ -10,7 +10,7 @@ Read the root `CLAUDE.md` first. This file adds mobile rules.
 ## Rules
 
 - TypeScript strict, no `any`. API types are generated from `contracts/openapi.yaml`, never hand-written.
-- Server state: TanStack Query; offline history and queued messages are the persisted query cache (ADR-002). Local state: Zustand.
+- Server state: TanStack Query; offline history is the persisted query cache and queued messages are persisted paused mutations (ADR-002). Local state: Zustand.
 - Storage (ADR-003): tokens and other credentials in `expo-secure-store` only (`AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY`); query cache and settings in MMKV (no credentials, no photos, excluded from backup); expo-sqlite deferred; all access through `shared/storage`. Never in logs or Sentry breadcrumbs. No photo or voice file is kept on the device after upload succeeds.
 - Run as a development build (expo-dev-client), not Expo Go; New Architecture only (ADR-001).
 - Sentry and PostHog start only after their own consent switch is on, with no session replay, screenshots or autocapture (ADR-004, `docs/design/flows.md`).

@@ -26,7 +26,7 @@ Go through each item that applies to the diff. Report findings with severity, lo
 
 **Dependencies**
 - `npm audit --audit-level=high` clean; `pip-audit` clean of any known vulnerability, or an `--ignore-vuln <ID>` line with reason and review date (ADR-019).
-- Bumps: release ≥ 7 days old, pinned by SHA or digest; only vendor security releases of runtime images skip the wait, after security-engineer reads the notes (ADR-018, ADR-019). The `litellm` PyPI package is never a dependency (ADR-010).
+- Bumps (ADR-018, ADR-019): each in its own PR with release notes linked and a security-engineer review; releases ≥ 7 days old — images and actions pinned by tag + digest/SHA, Python/npm packages by lockfile with `exclude-newer`; only vendor security releases of runtime images skip the wait, after security-engineer reads the notes. The `litellm` PyPI package is never a direct or transitive dependency (ADR-010).
 
 **Mobile**
 - Tokens only in SecureStore; certificate pinning for the API; permissions requested at use with a reason.
