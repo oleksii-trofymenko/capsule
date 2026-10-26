@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | review |
+| Status | done |
 | Owner | platform-engineer |
 | Reviewers | code-reviewer, security-engineer |
 | Estimate | S |
@@ -17,7 +17,7 @@ Standards are enforced by tools before a commit exists, so reviews spend time on
 
 ## Acceptance criteria
 
-- [ ] ADR-018 written and accepted.
+- [x] ADR-018 written and accepted.
 - [x] Pre-commit hooks: Ruff (lint + format), mypy strict on `apps/api`, ESLint + Prettier + `tsc --noEmit` on `apps/mobile`, gitleaks, trailing whitespace and end-of-file fixes, Conventional Commits check on the commit message.
 - [x] Shared config files at the root or per app; strict settings from day one.
 - [x] `make lint` runs the same checks as the hooks.
@@ -46,6 +46,7 @@ Standards are enforced by tools before a commit exists, so reviews spend time on
   - Conventional Commits with `--force-scope`: every message needs a scope (`chore(repo): …`). The first two commits on `main` predate the rule.
   - Mobile hooks are shell-free (`npm --prefix apps/mobile exec --no -- <tool>`) and skip until the mobile skeleton adds `package.json` and `tsconfig.json`.
   - mypy `ignore-without-code` and Ruff `PGH003` force an error code on every `# type: ignore`.
+- ADR-018 accepted by the owner on 2026-10-26. GitHub secret scanning and push protection enabled the same day (free for public repos).
 - Reviews: code-reviewer approve (after blocker B1 — `make lint` did not scan files for secrets — was fixed); security-engineer approve. QA: pass.
 - Numbers:
   - Fake AWS key (generated at runtime) committed → blocked: `RuleID: aws-access-token`, `RuleID: generic-api-key`, "leaks found: 2", no commit created. Unstaged key in a tracked file → `make lint` fails (`aws-access-token`). Key committed with `--no-verify` → history scan fails.

@@ -1,6 +1,6 @@
 # ADR-018: Code quality enforced by pre-commit: Ruff, mypy strict, ESLint, Prettier, tsc, gitleaks, Conventional Commits
 
-- Status: proposed
+- Status: accepted (2026-10-26)
 - Date: 2026-10-26
 - Deciders: Orchestrator, platform-engineer, project owner
 - Related: E0-04, E0-05, E0-06, ADR-001, ADR-005, blueprint §4 "Code quality", §9
