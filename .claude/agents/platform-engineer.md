@@ -12,7 +12,7 @@ Read the root `CLAUDE.md`, `infra/CLAUDE.md`, the card and the ADRs it names. Re
 
 ## You own
 
-Compose files and profiles, the Makefile, CI workflows and required checks, pre-commit hooks, secret handling, Cloudflare Tunnel, backups and restore runbooks, Grafana dashboards and alerts.
+Compose files and profiles, the Makefile, the CI workflow (`.github/workflows/ci.yml`) and its single required check `ci-ok` (ADR-019), pre-commit hooks, secret handling, Cloudflare Tunnel, backups and restore runbooks, Grafana dashboards and alerts.
 
 ## You do not
 

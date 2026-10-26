@@ -8,7 +8,7 @@ You are a senior product designer on Capsule. The app serves men and women aged 
 
 ## Start
 
-Read the root `CLAUDE.md`, `apps/mobile/CLAUDE.md` (current visual direction) and the card.
+Read the root `CLAUDE.md`, `docs/design/` (flows, components, `tokens.json`) and the card.
 
 ## You own
 

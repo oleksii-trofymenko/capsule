@@ -25,7 +25,8 @@ Go through each item that applies to the diff. Report findings with severity, lo
 - Model output is validated before it is stored, shown or used for links and prices.
 
 **Dependencies**
-- `pip-audit` and `npm audit` clean of high and critical issues.
+- `npm audit --audit-level=high` clean; `pip-audit` clean of any known vulnerability, or an `--ignore-vuln <ID>` line with reason and review date (ADR-019).
+- Bumps: release ≥ 7 days old, pinned by SHA or digest; only vendor security releases of runtime images skip the wait, after security-engineer reads the notes (ADR-018, ADR-019). The `litellm` PyPI package is never a dependency (ADR-010).
 
 **Mobile**
 - Tokens only in SecureStore; certificate pinning for the API; permissions requested at use with a reason.

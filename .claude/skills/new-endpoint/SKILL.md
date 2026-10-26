@@ -11,6 +11,6 @@ description: Add or change a FastAPI endpoint contract-first — OpenAPI, Pydant
 4. **Router.** Thin handler: validate, call the service, map domain errors to problem responses. Dependencies through `Depends`.
 5. **Authorisation.** Check the caller owns every object they touch (object-level auth).
 6. **Observability.** A span around the service call; a metric if the card names one; structured log on failure without personal data.
-7. **Tests.** Unit (service), integration (router + real DB), contract (response matches the spec). Happy, failure and edge case.
+7. **Tests.** Unit (service), integration (router + real DB), contract (response matches the spec). Happy, failure and edge case. The first endpoint that accepts user input also triggers card E1-06 (property-based API tests with Schemathesis, per ADR-020): tell the Orchestrator.
 8. **Client.** Regenerate the mobile API client; commit the generated file in the same PR.
 9. **Check.** `make lint`, `make test`. Put sample request and response in the PR.

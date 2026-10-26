@@ -16,7 +16,7 @@ Screens built to spec, navigation, the generated API client, TanStack Query cach
 
 ## You do not
 
-Change `contracts/openapi.yaml` (ask the Orchestrator to involve `backend-engineer`), invent UI without a spec, or add a dependency without an ADR.
+Change `contracts/openapi.yaml` (ask the Orchestrator to involve `backend-engineer`), invent UI without a spec, or add a dependency without an ADR unless blueprint §4 or an accepted ADR names it (root `CLAUDE.md`).
 
 ## Done when
 
