@@ -37,7 +37,8 @@ Specialists cannot start other agents. Every hand-off goes through you, with a s
 
 No Makefile yet: each target is created by the card in brackets. Keep this list in sync with the Makefile.
 
-- `make lint` — Ruff, mypy, ESLint, tsc (E0-04)
+- `make hooks` — install the pre-commit and commit-msg hooks (E0-04)
+- `make lint` — every pre-commit hook on all files, plus secret scans of unstaged changes and Git history (E0-04)
 - `make test` — unit and integration tests (E0-06)
 - `make up` / `make down` / `make logs` — start, stop and tail the stack (E0-07)
 - `make eval` — eval suite in `ml/evals` (later: E3, with ADR-017)

@@ -1,0 +1,81 @@
+# Pre-commit hooks (ADR-018). Install once: `make hooks`. Run all: `make lint`.
+# Revs are commit SHAs; the `# frozen:` comment names the release. A bump is its own PR,
+# made at least 7 days after the upstream release, links the release notes and is reviewed
+# by security-engineer.
+default_install_hook_types: [pre-commit, commit-msg]
+# `manual` lets `make lint` (--hook-stage manual) run every check plus the full-repo secret scan.
+default_stages: [pre-commit, manual]
+minimum_pre_commit_version: "4.0.0"
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: 3e8a8703264a2f4a69428a0aa4dcb512790b2c8c # frozen: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+        args: [--markdown-linebreak-ext=md]
+      - id: end-of-file-fixer
+
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: 83d9cd684c87d95d656c1458ef04895a7f1cbd8e # frozen: v8.30.1
+    hooks:
+      # Staged changes: on commit and in `make lint`.
+      - id: gitleaks
+      # `make lint` only: unstaged changes to tracked files, then every commit in history.
+      # Git-based on purpose: `gitleaks dir` ignores .gitignore and would flag local .env files.
+      - id: gitleaks
+        alias: gitleaks-unstaged
+        name: Detect hardcoded secrets (unstaged)
+        entry: gitleaks git --pre-commit --redact --verbose
+        stages: [manual]
+      - id: gitleaks
+        alias: gitleaks-history
+        name: Detect hardcoded secrets (history)
+        entry: gitleaks git --redact --verbose
+        stages: [manual]
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: f368fb366ff7f2f808dd324b83a6d32267799e19 # frozen: v0.17.2
+    hooks:
+      - id: ruff-check
+        args: [--fix]
+      - id: ruff-format
+
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: 2834ec6639549dd6796205c8f011dedcd587288b # frozen: v2.4.0
+    hooks:
+      - id: mypy
+        files: ^apps/api/
+        args: [] # strictness comes from [tool.mypy] in pyproject.toml
+
+  # Mobile tools run from apps/mobile/node_modules, so versions live in its package.json.
+  # They skip while apps/mobile has no source files; root-level config files do not trigger them.
+  # No shell: npm exec keeps the repository root as cwd, so paths point into apps/mobile.
+  - repo: local
+    hooks:
+      - id: prettier
+        name: prettier (apps/mobile)
+        language: system
+        entry: npm --prefix apps/mobile exec --no -- prettier --write --log-level warn --ignore-path apps/mobile/.prettierignore apps/mobile
+        files: ^apps/mobile/.*\.(ts|tsx|js|jsx|json)$
+        exclude: ^apps/mobile/[^/]+$
+        pass_filenames: false
+      - id: eslint
+        name: eslint (apps/mobile)
+        language: system
+        entry: npm --prefix apps/mobile exec --no -- eslint --max-warnings=0 --config apps/mobile/eslint.config.js apps/mobile
+        files: ^apps/mobile/.*\.(ts|tsx|js|jsx)$
+        exclude: ^apps/mobile/[^/]+$
+        pass_filenames: false
+      - id: tsc
+        name: tsc --noEmit (apps/mobile)
+        language: system
+        entry: npm --prefix apps/mobile exec --no -- tsc --noEmit --project apps/mobile
+        files: ^apps/mobile/.*\.(ts|tsx)$
+        pass_filenames: false
+
+  - repo: https://github.com/compilerla/conventional-pre-commit
+    rev: 91ab4bf57e58b32adf1a122681f6ebe164d081c8 # frozen: v4.4.0
+    hooks:
+      - id: conventional-pre-commit
+        stages: [commit-msg]
+        args: [--force-scope]
