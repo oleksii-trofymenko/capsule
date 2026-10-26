@@ -11,7 +11,7 @@ dockerfile=apps/api/Dockerfile
 status=0
 
 images() { # file, image name -> every pinned reference to that image, sorted and unique
-  grep -Eo "image: *$2:[^[:space:]]+" "$1" | sed -E 's/^image: *//' | sort -u
+  { grep -Eo "image: *$2:[^[:space:]]+" "$1" || true; } | sed -E 's/^image: *//' | sort -u
 }
 
 for name in pgvector/pgvector redis; do
