@@ -1,10 +1,20 @@
 import json
 import logging
+import logging.config
 import sys
+from collections.abc import Iterator
 
 import pytest
+from uvicorn.config import LOGGING_CONFIG
 
-from core.logging import QUIET_LOGGERS, JsonFormatter, configure_logging, request_id_var
+from core.logging import (
+    QUIET_LOGGERS,
+    SERVER_ACCESS_LOGGER,
+    SERVER_LOGGERS,
+    JsonFormatter,
+    configure_logging,
+    request_id_var,
+)
 
 
 def _record(**extra: object) -> logging.LogRecord:
@@ -63,3 +73,55 @@ def test_third_party_loggers_only_pass_warnings(capsys: pytest.CaptureFixture[st
     assert messages == ["redis is slow", "own debug line"]
     for name in QUIET_LOGGERS:
         assert logging.getLogger(name).getEffectiveLevel() == logging.WARNING
+
+
+@pytest.fixture
+def uvicorn_logging() -> Iterator[None]:
+    """Apply uvicorn's own logging config, as `uvicorn` does before it calls the app factory."""
+    names = (*SERVER_LOGGERS, SERVER_ACCESS_LOGGER)
+    saved = {
+        name: (
+            logging.getLogger(name).handlers[:],
+            logging.getLogger(name).level,
+            logging.getLogger(name).propagate,
+        )
+        for name in names
+    }
+    logging.config.dictConfig(LOGGING_CONFIG)
+    yield
+    for name, (handlers, level, propagate) in saved.items():
+        server_logger = logging.getLogger(name)
+        server_logger.handlers[:] = handlers
+        server_logger.setLevel(level)
+        server_logger.propagate = propagate
+
+
+@pytest.mark.usefixtures("uvicorn_logging")
+def test_uvicorn_server_lines_are_json_at_our_level(capsys: pytest.CaptureFixture[str]) -> None:
+    configure_logging("WARNING")
+
+    logging.getLogger("uvicorn.error").info("Started server process [%d]", 1)
+    logging.getLogger("uvicorn.error").error("Application startup failed. Exiting.")
+
+    captured = capsys.readouterr()
+    lines = [json.loads(line) for line in captured.out.splitlines()]
+    assert [(line["logger"], line["level"], line["msg"]) for line in lines] == [
+        ("uvicorn.error", "ERROR", "Application startup failed. Exiting.")
+    ]
+    assert captured.err == ""
+
+
+@pytest.mark.usefixtures("uvicorn_logging")
+def test_uvicorn_access_lines_are_never_written(capsys: pytest.CaptureFixture[str]) -> None:
+    configure_logging("DEBUG")
+
+    logging.getLogger("uvicorn.access").info(
+        '%s - "%s %s HTTP/%s" %d', "203.0.113.7:5000", "GET", "/v1/ready?email=someone", "1.1", 200
+    )
+    logging.getLogger("uvicorn.error").info("Started server process [%d]", 1)
+
+    captured = capsys.readouterr()
+    assert [json.loads(line)["msg"] for line in captured.out.splitlines()] == [
+        "Started server process [1]"
+    ]
+    assert "203.0.113.7" not in captured.out + captured.err

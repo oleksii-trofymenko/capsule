@@ -1,0 +1,17 @@
+# Throwaway test services for `make test` on a developer machine (project `capsule-test`, its own
+# volumes, removed on exit). CI uses its own service containers with the same image pins.
+# Use with compose.base.yml and test.env; only postgres and redis are started.
+services:
+  postgres:
+    # The test suite refuses databases whose name does not end in _test.
+    networks: [backend, test_host]
+    ports:
+      - "127.0.0.1:${CAPSULE_TEST_PG_PORT:-55432}:5432"
+  redis:
+    networks: [backend, test_host]
+    ports:
+      - "127.0.0.1:${CAPSULE_TEST_REDIS_PORT:-56379}:6379"
+
+networks:
+  # Published ports need a non-internal network; this one exists only in the test project.
+  test_host: {}

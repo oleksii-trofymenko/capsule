@@ -19,6 +19,13 @@ ALLOWED_EXTRA = ("method", "path", "status", "duration_ms", "check", "error")
 # Libraries that log URLs, queries or connection details at INFO/DEBUG; only warnings pass.
 QUIET_LOGGERS = ("httpx", "httpcore", "psycopg", "sqlalchemy", "redis")
 
+# uvicorn (ADR-021) installs its own text handlers before it calls the app factory. Its server
+# loggers go through our JSON handler at LOG_LEVEL instead. Its access logger stays silent even
+# without `--no-access-log`: RequestContextMiddleware writes the access line, without client IPs
+# or query strings.
+SERVER_LOGGERS = ("uvicorn", "uvicorn.error")
+SERVER_ACCESS_LOGGER = "uvicorn.access"
+
 
 class JsonFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
@@ -49,3 +56,11 @@ def configure_logging(level: str) -> None:
     root.setLevel(level)
     for name in QUIET_LOGGERS:
         logging.getLogger(name).setLevel(logging.WARNING)
+    for name in SERVER_LOGGERS:
+        server_logger = logging.getLogger(name)
+        server_logger.handlers.clear()
+        server_logger.setLevel(logging.NOTSET)
+        server_logger.propagate = True
+    access = logging.getLogger(SERVER_ACCESS_LOGGER)
+    access.handlers.clear()
+    access.propagate = False
