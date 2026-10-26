@@ -101,18 +101,28 @@ services:
       - server
       - -s3
       # Master, volume and filer listen on loopback only: their HTTP APIs have no auth and would
-      # bypass S3 signatures. Only the S3 gateway (signed requests) is reachable on `backend`.
+      # bypass S3 signatures. On `backend` only two listeners remain: the S3 API on 8333 (signed
+      # requests) and the S3 gRPC port 18333, whose IAM service (PutIdentity, PutPolicy, ...)
+      # requires a JWT signed with the filer key from security.toml (GHSA-5fx4-c9qp-36jc).
+      # Without that key any container on `backend` could create an admin identity.
       - -ip=127.0.0.1
       - -ip.bind=127.0.0.1
       - -s3.ip.bind=0.0.0.0
+      # Iceberg (8181) and Lance (9101) catalog endpoints are not used; they would bind 0.0.0.0.
+      - -s3.port.iceberg=0
+      - -s3.port.lance=0
       # Per-chunk encryption of S3 uploads. The keys sit in the filer store on the same disk, so
       # this is not protection against a stolen disk; that needs host disk encryption (README).
       - -s3.encryptVolumeData
       - -master.telemetry=false
     environment:
-      # The one S3 identity (admin). Without it SeaweedFS S3 would accept anonymous requests.
+      # The one S3 identity (admin), read on every start. Without any identity SeaweedFS S3 would
+      # accept anonymous requests.
       AWS_ACCESS_KEY_ID: ${SEAWEEDFS_S3_ACCESS_KEY:?set in .env}
       AWS_SECRET_ACCESS_KEY: ${SEAWEEDFS_S3_SECRET_KEY:?set in .env}
+    configs:
+      - source: seaweedfs_security
+        target: /etc/seaweedfs/security.toml
     volumes:
       - seaweed_data:/data
     networks: [backend]
@@ -126,6 +136,17 @@ services:
     security_opt: [no-new-privileges:true]
     restart: unless-stopped
     logging: *logging
+
+configs:
+  # JWT keys, generated into .env by `make up`. jwt.filer_signing is the one that closes the IAM
+  # gRPC service on 18333 (tested on 4.48); jwt.signing also signs volume-server writes.
+  seaweedfs_security:
+    content: |
+      [jwt.signing]
+      key = "${SEAWEEDFS_JWT_SIGNING_KEY:?set in .env}"
+
+      [jwt.filer_signing]
+      key = "${SEAWEEDFS_JWT_FILER_SIGNING_KEY:?set in .env}"
 
 networks:
   backend:

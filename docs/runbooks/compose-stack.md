@@ -11,7 +11,7 @@ No alerts exist yet (observability epic, E2). Until then, failures show up as `m
 ## `make up` fails or times out
 
 1. `$C ps`: which service is `unhealthy`, `restarting` or `exited`?
-2. `$C logs --tail=100 <service>`. All API lines are JSON. Errors from `uvicorn.error` or `core.*` loggers explain startup failures, for example `Invalid settings: DATABASE_URL: ...`.
+2. `$C logs --tail=100 <service>`. API lines are JSON once logging is configured. An invalid setting stops the API before that: it prints a plain Python traceback ending in `core.config.ConfigError: Invalid settings: DATABASE_URL: ...`. It names the variable and the rule, never the value.
 3. Common causes:
    - Docker Desktop is not running: start it, then run `make up` again.
    - Port 8000 is taken: set `API_HOST_PORT` in `.env`, then `make up`.
@@ -34,9 +34,9 @@ The body lists the dependencies that are `failing`.
 
 ## Credentials in `.env`
 
-- Postgres and SeaweedFS store their credentials in their volumes on the first start. Editing them in `.env` afterwards breaks the login: the API logs `OperationalError` on the readiness check.
-- To rotate the Postgres password: `$C exec postgres psql -U capsule -c "ALTER USER capsule PASSWORD '<new>'"`, update `.env`, then `make up`.
-- Redis and SeaweedFS read theirs on every start: update `.env`, then `make up`.
+- Postgres stores its user and password in its volume on the first start only. Editing them in `.env` afterwards breaks the login: the API logs `OperationalError` on the readiness check. To rotate the password: `$C exec postgres psql -U capsule -c "ALTER USER capsule PASSWORD '<new>'"`, update `.env`, then `make up`.
+- Redis, the SeaweedFS S3 identity and the SeaweedFS JWT keys are read on every start. To rotate them: update `.env`, then `make up`. Tested for the S3 identity: after a restart the old key gets 403 and the new one 200.
+- `make up` adds any secret that `.env.example` has and `.env` lacks (for example after an upgrade) with a fresh random value. It never changes existing values.
 - Lost `.env` and no data to keep: reset (below).
 
 ## CI fails in `check-pins.sh`
@@ -60,3 +60,11 @@ make up
 ```sh
 docker compose --project-name capsule-test --env-file infra/compose/test.env -f infra/compose/compose.base.yml -f infra/compose/compose.test.yml down --volumes
 ```
+
+## SeaweedFS exposure check fails
+
+`bash infra/compose/check-seaweedfs.sh` prints `FAIL` lines:
+
+- `unexpected listeners`: a SeaweedFS bump added a listener on `0.0.0.0`. Find its flag in `weed server -h`, then disable it or bind it to loopback in `compose.base.yml`.
+- `PutIdentity was not rejected`: `security.toml` is missing or has no `[jwt.filer_signing]` key. Check with `$C exec seaweedfs cat /etc/seaweedfs/security.toml` and check `.env`. Treat it as a security incident: anyone on `backend` may have added an identity. Rotate the S3 credentials and JWT keys in `.env`, then run `make up` and the check again.
+- S3 status mismatch: compare `SEAWEEDFS_S3_*` in `.env` with what the container got (`$C exec seaweedfs env | grep AWS_ACCESS_KEY_ID`).

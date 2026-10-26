@@ -7,7 +7,7 @@
 | `api` | FastAPI app (`apps/api`), served by uvicorn (ADR-021) | `http://127.0.0.1:${API_HOST_PORT:-8000}` from the host: `/v1/health` (liveness), `/v1/ready` (Postgres + Redis) | none | none yet (observability epic, E2) |
 | `postgres` | PostgreSQL 16 + pgvector, the only database (ADR-007) | inside the stack as `postgres:5432`; from the host: `docker compose -p capsule exec postgres psql -U capsule capsule` | volume `capsule_pg_data` | none yet (E2) |
 | `redis` | Queue, cache, rate limits (ADR-006); AOF, `volatile-lru`, password | inside the stack as `redis:6379`; from the host: `docker compose -p capsule exec redis redis-cli` (`REDISCLI_AUTH` is set) | volume `capsule_redis_data` | none yet (E2) |
-| `seaweedfs` | S3 API for media (ADR-008), single node | inside the stack as `http://seaweedfs:8333`, signed requests only | volume `capsule_seaweed_data`, never backed up | none yet (E2) |
+| `seaweedfs` | S3 API for media (ADR-008), single node | inside the stack as `http://seaweedfs:8333`, signed requests only; S3 gRPC `seaweedfs:18333` (IAM calls need a JWT) | volume `capsule_seaweed_data`, never backed up | none yet (E2) |
 
 The worker (E3), GPU services, observability and the tunnel are out of scope here.
 
@@ -15,7 +15,10 @@ The worker (E3), GPU services, observability and the tunnel are out of scope her
 
 - Only `api` publishes a port, and only on `127.0.0.1`. Nothing is reachable from the LAN or the internet.
 - `postgres`, `redis` and `seaweedfs` sit only on `backend`, an `internal` network with no route to the host or the internet. `api` is on `backend` and `edge`.
-- SeaweedFS binds its master, volume and filer HTTP APIs to the container's loopback, because they have no auth. Only the S3 gateway listens on `backend`.
+- SeaweedFS binds its master, volume and filer (HTTP and gRPC) to the container's loopback, because their APIs have no auth. The Iceberg and Lance catalog listeners are switched off. On `backend` exactly two ports listen:
+  - `8333`: S3 API, signed requests only (the identity from `.env`);
+  - `18333`: S3 gRPC. It cannot be closed in 4.48, and its IAM service (`PutIdentity`, `PutPolicy`, ...) would let any container create an admin identity (GHSA-5fx4-c9qp-36jc). `security.toml` sets `[jwt.filer_signing]` and `[jwt.signing]` keys from `.env`, so those calls need a valid JWT. Tested on 4.48: `jwt.filer_signing` is the key that closes it; `jwt.signing` alone does not.
+- `bash infra/compose/check-seaweedfs.sh` (after `make up`) proves all of this from a neighbouring container: listeners, IAM gRPC without or with a forged token (must be `Unauthenticated`), unsigned and wrong-secret S3 (403), signed S3 (200). It uses a pinned `fullstorydev/grpcurl` image for the gRPC call only. Run it after every SeaweedFS bump.
 - When the tunnel arrives: route only the public API paths through it. `/v1/ready` must not be public: every call probes Postgres and Redis.
 
 ## Health checks and restarts
@@ -33,7 +36,7 @@ The worker (E3), GPU services, observability and the tunnel are out of scope her
 
 ## Image pins
 
-- Every image is pinned by tag and digest. Each release was at least 7 days old when pinned (ADR-018, ADR-019).
+- Every image is pinned by tag and digest. Each release was at least 7 days old when pinned (ADR-018, ADR-019). The one exception is the API's base image, python 3.13.17 (2026-10-24), adopted early as a runtime security release under ADR-019 after security-engineer review.
 - The Postgres and Redis pins must equal the CI service containers (ADR-016). The uv image in `apps/api/Dockerfile` must equal `UV_VERSION` in CI. `check-pins.sh` checks both in the CI lint job; run it by hand with `bash infra/compose/check-pins.sh`.
 - Change all of these in the same PR.
 
@@ -52,4 +55,4 @@ The worker (E3), GPU services, observability and the tunnel are out of scope her
 
 ## Runbook
 
-[`docs/runbooks/compose-stack.md`](../../docs/runbooks/compose-stack.md): stack not healthy, `.env` problems, pin drift, resetting volumes.
+[`docs/runbooks/compose-stack.md`](../../docs/runbooks/compose-stack.md): stack not healthy, `.env` problems, pin drift, SeaweedFS exposure check, resetting volumes.
