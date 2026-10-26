@@ -6,16 +6,16 @@ One file per decision: `docs/adr/NNN-short-title.md`, from `000-template.md`. Ac
 
 | ADR | Decision | Status | Lands in |
 | --- | --- | --- | --- |
-| 001 | Expo (React Native) + TypeScript strict + Expo Router for mobile | planned | E0-03 |
-| 002 | TanStack Query for server state, Zustand for local state | planned | E0-03 |
-| 003 | Tokens in Keychain/Keystore (expo-secure-store); SQLite/MMKV for cache | planned | E0-03 |
-| 004 | Sentry for crashes and performance, PostHog for analytics and flags | planned | E0-03 |
-| 005 | Python + FastAPI modular monolith; OpenAPI 3.1 as the contract | planned | E0-03 |
-| 006 | Redis for queue, cache and rate limits; arq or Celery worker | planned | E0-03 |
-| 007 | PostgreSQL + pgvector as the single database, Alembic migrations | planned | E0-03 |
-| 008 | MinIO (S3-compatible) for media with TTL deletion | planned | E0-03 |
-| 009 | LangGraph for the agent graph | planned | E0-03 |
-| 010 | LiteLLM as the provider-agnostic gateway with routing and fallback | planned | E0-03 |
+| [001](001-expo-react-native.md) | Expo (React Native) + TypeScript strict + Expo Router for mobile | proposed | E0-03 |
+| [002](002-tanstack-query-zustand.md) | TanStack Query for server state, Zustand for local state | proposed | E0-03 |
+| [003](003-mobile-secure-storage.md) | Tokens in Keychain/Keystore (expo-secure-store); SQLite/MMKV for cache | proposed | E0-03 |
+| [004](004-sentry-posthog.md) | Sentry for crashes and performance, PostHog for analytics and flags | proposed | E0-03 |
+| [005](005-fastapi-modular-monolith.md) | Python + FastAPI modular monolith; OpenAPI 3.1 as the contract | proposed | E0-03 |
+| [006](006-redis-saq-worker.md) | Redis for queue, cache and rate limits; SAQ worker | proposed | E0-03 |
+| [007](007-postgres-pgvector.md) | PostgreSQL + pgvector as the single database, Alembic migrations | proposed | E0-03 |
+| [008](008-s3-storage-seaweedfs.md) | S3 API for media; SeaweedFS locally; TTL enforced by our own job | proposed | E0-03 |
+| [009](009-langgraph-agent.md) | LangGraph for the agent graph | proposed | E0-03 |
+| [010](010-litellm-gateway.md) | LiteLLM as the provider-agnostic gateway with routing and fallback | proposed | E0-03 |
 | 011 | Ollama first, vLLM after a benchmark | planned | E3 |
 | 012 | Model choice and VRAM budget on 16 GB | planned | E3 / E6 |
 | 013 | OpenTelemetry → Grafana stack, Langfuse for LLM traces | planned | E2 |
