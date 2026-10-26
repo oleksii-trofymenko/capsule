@@ -51,6 +51,16 @@ services:
     volumes:
       - pg_data:/var/lib/postgresql/data
     networks: [backend]
+    # E0-12: runs as the image's postgres user from the start, so the entrypoint skips its
+    # chown/gosu step and needs no capability. As root it would need DAC_OVERRIDE, SETUID and
+    # SETGID (+ CHOWN, FOWNER for a wrongly owned volume). Tested with cap_drop ALL, one cap at a time.
+    user: "999:999"
+    read_only: true
+    # The Unix socket dir must be writable by uid 999; /tmp for the entrypoint and initdb.
+    tmpfs:
+      - /var/run/postgresql:uid=999,gid=999,mode=0775
+      - /tmp
+    cap_drop: [ALL]
     healthcheck:
       # -h 127.0.0.1: the real server, not the init-time one on the Unix socket.
       test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
@@ -83,6 +93,13 @@ services:
     volumes:
       - redis_data:/data
     networks: [backend]
+    # E0-12: runs as the image's redis user (uid 999, gid 1000); no capability needed. As root the
+    # entrypoint needs SETUID and SETGID to drop to redis, and WITHOUT them it silently keeps
+    # running redis-server as root, so never start it as root with a reduced cap set.
+    user: "999:1000"
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
     healthcheck:
       test: ["CMD-SHELL", "redis-cli ping | grep -q PONG"]
       interval: 10s
@@ -126,6 +143,14 @@ services:
     volumes:
       - seaweed_data:/data
     networks: [backend]
+    # E0-12: runs as the image's seaweed user (uid 1000) from the start; no capability needed (all
+    # ports are above 1024). As root the entrypoint chowns /data and drops to uid 1000 with
+    # su-exec, which needs SETUID and SETGID. The image's /data is owned by 1000, so new volumes
+    # are too; a volume owned by someone else: see docs/runbooks/compose-stack.md.
+    # Root filesystem stays writable: Compose cannot place `configs.content` (security.toml) into a
+    # read-only container, and moving the JWT keys elsewhere is secrets work (ADR-015).
+    user: "1000:1000"
+    cap_drop: [ALL]
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8333/healthz"]
       interval: 10s
