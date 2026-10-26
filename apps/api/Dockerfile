@@ -1,7 +1,8 @@
 # Capsule API image (E0-07). Build context: apps/api. Run by infra/compose/compose.base.yml.
-# Pins: tag for humans, digest for the build; both at least 7 days old (ADR-018, ADR-019).
+# Pins: tag for humans, digest for the build; at least 7 days old (ADR-018, ADR-019), except
+# python 3.13.17 (2026-10-24), adopted early as a runtime security release (ADR-019 exception).
 # UV_IMAGE must match UV_VERSION in .github/workflows/ci.yml (checked by infra/compose/check-pins.sh).
-ARG PYTHON_IMAGE=python:3.13.15-slim-trixie@sha256:7c61056e61ac89e852de05f3dc6fa51a6dd2181797bceed46aa725dd7cb2cd3b
+ARG PYTHON_IMAGE=python:3.13.17-slim-trixie@sha256:d98cc29d3266e535dd9da1099688d9cb3ca4753813571e071763d17725460962
 ARG UV_IMAGE=ghcr.io/astral-sh/uv:0.13.1@sha256:4a1f3666816dafadd20ceb71eac9a7d56d7ef30279f7d64048519ab901ada336
 
 FROM ${UV_IMAGE} AS uv
