@@ -1,0 +1,29 @@
+# apps/api — FastAPI modular monolith
+
+Read the root `CLAUDE.md` first. This file adds backend rules.
+
+## Shape
+
+- `modules/<name>/` — auth, consultations, media, catalog, trends, agent. Each module exposes a service interface; other modules call only that interface, never its tables or internals.
+- `core/` — config, database, logging, security, telemetry. No business logic.
+- `workers/` — background jobs (photo, audio, generation). HTTP handlers never wait on heavy work.
+- `migrations/` — Alembic. `tests/` — unit, integration, contract.
+
+## Rules
+
+- Python 3.12+, full type hints, mypy strict. A `# type: ignore` needs a reason on the same line.
+- Pydantic v2 schemas on every request and response. No bare `dict` at the API edge.
+- Async all the way: no blocking calls (requests, `time.sleep`, sync DB drivers) in async code.
+- Dependencies through `Depends`; no global mutable state. One DB session per request.
+- Parameterised queries only. No N+1: eager-load or batch. Every new query ships `EXPLAIN ANALYZE` output in the PR.
+- Every external call (LLM, search, storage) has a timeout, retry with backoff, and a clear failure path. POST endpoints that create things accept an idempotency key.
+- Errors use one format (RFC 9457 `application/problem+json`). Never leak stack traces.
+- Logs are structured JSON with a trace id; no personal data, no prompts with user content at INFO level.
+- Config comes from environment variables via one settings object. No hosts, paths or model names in code.
+
+## Tests
+
+- Unit: domain logic, no network.
+- Integration: real Postgres and Redis via Testcontainers.
+- Contract: responses validated against `contracts/openapi.yaml`.
+- Each feature: a happy path, a failure path and an edge case. Mock only at system boundaries.
