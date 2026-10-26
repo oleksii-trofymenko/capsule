@@ -284,8 +284,10 @@ jobs:
         run: |
           uv export --directory apps/api --locked --no-emit-project --format requirements-txt \
             --output-file "$RUNNER_TEMP/requirements.txt"
+          # PYSEC-2026-4320: false positive for certifi 2026.10.18 (that release removed all emSign roots; OSV range wrongly includes it). Dev-only via httpx. Remove at the next exclude-newer bump (>= 2026-10-27, picks up 2026.10.19). Review by 2026-11-09. Approved: security-engineer.
           UV_EXCLUDE_NEWER="$TOOLS_CUTOFF" uvx --python 3.13 "pip-audit==$PIP_AUDIT_VERSION" \
-            --strict --disable-pip --requirement "$RUNNER_TEMP/requirements.txt"
+            --strict --disable-pip --requirement "$RUNNER_TEMP/requirements.txt" \
+            --ignore-vuln PYSEC-2026-4320
 
   audit-mobile:
     name: audit (mobile)
