@@ -1,0 +1,9 @@
+# Allow-list: only what the runtime image needs. Tests, scripts, caches and local env stay out.
+*
+!pyproject.toml
+!uv.lock
+!main.py
+!core/
+!modules/
+**/__pycache__
+**/*.py[cod]
