@@ -19,10 +19,11 @@ For the app, Vitest lost to Jest because the Expo preset (`jest-expo`) is built 
 
 ## Decision
 
-API tests use pytest: unit tests by default, and tests that need Postgres or Redis carry `@pytest.mark.integration` and connect through `DATABASE_URL` and `REDIS_URL` to real services (CI service containers, Compose locally). App tests use Jest + RNTL via `jest-expo`. Maestro and k6 arrive with their own cards.
+API tests use pytest, and those that need Postgres or Redis are marked `@pytest.mark.integration` and reach real services through `DATABASE_URL` and `REDIS_URL` (CI service containers, Compose locally), while app tests use Jest + RNTL via `jest-expo`.
 
 ## Consequences
 
+- Scope: Maestro (mobile E2E) and k6 (load) arrive with their own cards; this ADR only fixes the layers they slot into.
 - Easier: one way to reach the database everywhere; integration tests exercise the real SQL, pgvector and Redis; CI runs unit (`-m "not integration"`) and integration (`-m integration`) as separate jobs.
 - Harder: each integration test owns its data (transaction rollback or unique keys), because the database is shared across the run. Once a project exists, "no tests collected" fails the unit jobs. The integration job treats it as a warning only until the first integration test lands; the card that adds that test removes the exception. The CI service image tags are pinned in `.github/workflows/ci.yml` and must match the Compose files.
 - We will monitor: unit and integration job duration in CI, flaky reruns, CI p50 against the 8-minute target.
