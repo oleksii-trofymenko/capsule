@@ -1,0 +1,85 @@
+import pytest
+from hypothesis import given
+from hypothesis import strategies as st
+
+from core.config import ConfigError, Settings, normalise_database_url
+
+REQUIRED = {
+    "DATABASE_URL": "postgresql://capsule:dummy@localhost:5432/capsule",
+    "REDIS_URL": "redis://localhost:6379/0",
+}
+
+
+def test_from_env_reads_variables_and_applies_defaults() -> None:
+    settings = Settings.from_env(REQUIRED)
+
+    assert settings.database_url.get_secret_value() == (
+        "postgresql+psycopg://capsule:dummy@localhost:5432/capsule"
+    )
+    assert settings.redis_url.get_secret_value() == "redis://localhost:6379/0"
+    assert settings.log_level == "INFO"
+    assert settings.ready_check_timeout_s == 1.0
+
+
+def test_from_env_reads_optional_variables() -> None:
+    settings = Settings.from_env(REQUIRED | {"LOG_LEVEL": "DEBUG", "READY_CHECK_TIMEOUT_S": "2.5"})
+
+    assert settings.log_level == "DEBUG"
+    assert settings.ready_check_timeout_s == 2.5
+
+
+def test_missing_variable_is_named() -> None:
+    with pytest.raises(ConfigError, match="REDIS_URL"):
+        Settings.from_env({"DATABASE_URL": REQUIRED["DATABASE_URL"]})
+
+
+@pytest.mark.parametrize(
+    ("name", "value"),
+    [
+        ("DATABASE_URL", "mysql://capsule:hunter2@localhost/capsule"),
+        ("DATABASE_URL", "postgresql+asyncpg://capsule:hunter2@localhost/capsule"),
+        ("DATABASE_URL", "postgresql://capsule:hunter2@/capsule"),
+        ("REDIS_URL", "http://capsule:hunter2@localhost:6379"),
+    ],
+)
+def test_invalid_url_is_rejected_without_echoing_it(name: str, value: str) -> None:
+    with pytest.raises(ConfigError) as caught:
+        Settings.from_env(REQUIRED | {name: value})
+
+    assert name in str(caught.value)
+    assert "hunter2" not in str(caught.value)
+
+
+@pytest.mark.parametrize("value", ["0", "-1", "11", "soon"])
+def test_ready_timeout_must_be_a_sane_number(value: str) -> None:
+    with pytest.raises(ConfigError, match="READY_CHECK_TIMEOUT_S"):
+        Settings.from_env(REQUIRED | {"READY_CHECK_TIMEOUT_S": value})
+
+
+def test_secrets_are_hidden_in_repr() -> None:
+    settings = Settings.from_env(REQUIRED)
+
+    assert "dummy" not in repr(settings)
+    assert "dummy" not in str(settings.model_dump())
+
+
+_part = st.text(alphabet="abcdefghijklmnopqrstuvwxyz0123456789-_", min_size=1, max_size=20)
+
+
+@given(
+    scheme=st.sampled_from(["postgres", "postgresql", "POSTGRESQL", "postgresql+psycopg"]),
+    user=_part,
+    password=_part,
+    host=_part,
+    port=st.integers(min_value=1, max_value=65535),
+    db=_part,
+)
+def test_normalise_database_url_sets_psycopg_and_is_idempotent(
+    scheme: str, user: str, password: str, host: str, port: int, db: str
+) -> None:
+    rest = f"{user}:{password}@{host}:{port}/{db}"
+
+    once = normalise_database_url(f"{scheme}://{rest}")
+
+    assert once == f"postgresql+psycopg://{rest}"
+    assert normalise_database_url(once) == once

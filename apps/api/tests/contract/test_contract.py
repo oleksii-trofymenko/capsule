@@ -1,0 +1,95 @@
+"""Responses match contracts/openapi.yaml, and the app serves exactly the operations it declares.
+
+Readiness here uses fake probes; tests/integration repeats the checks against real services.
+"""
+
+import pytest
+from jsonschema import Draft202012Validator
+
+from core.health import get_probes
+from main import create_app
+from tests.support import (
+    assert_matches_contract,
+    client_for,
+    contract,
+    dummy_settings,
+    schema_validator,
+)
+
+HTTP_METHODS = {"get", "put", "post", "delete", "patch", "head", "options", "trace"}
+
+
+async def _ok() -> None:
+    return None
+
+
+async def _refused() -> None:
+    raise ConnectionRefusedError
+
+
+def test_contract_is_openapi_31_with_valid_schemas() -> None:
+    spec = contract()
+
+    assert spec["openapi"].startswith("3.1.")
+    for schema in spec["components"]["schemas"].values():
+        Draft202012Validator.check_schema(schema)
+
+
+def test_app_serves_exactly_the_declared_operations() -> None:
+    declared = {
+        (path, method.upper())
+        for path, item in contract()["paths"].items()
+        for method in item
+        if method in HTTP_METHODS
+    }
+    # FastAPI's own schema is built in memory only; the app does not serve it (openapi_url=None).
+    served = {
+        (path, method.upper())
+        for path, item in create_app(dummy_settings()).openapi()["paths"].items()
+        for method in item
+        if method in HTTP_METHODS
+    }
+
+    assert served == declared
+
+
+@pytest.mark.anyio
+async def test_health_matches_contract() -> None:
+    async with client_for(create_app(dummy_settings())) as client:
+        response = await client.get("/v1/health")
+
+    assert_matches_contract(response, "/v1/health")
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("postgres", "redis", "status"),
+    [(_ok, _ok, 200), (_refused, _ok, 503), (_refused, _refused, 503)],
+)
+async def test_ready_matches_contract(postgres: object, redis: object, status: int) -> None:
+    app = create_app(dummy_settings())
+    app.dependency_overrides[get_probes] = lambda: {"postgres": postgres, "redis": redis}
+    async with client_for(app) as client:
+        response = await client.get("/v1/ready")
+
+    assert response.status_code == status
+    assert_matches_contract(response, "/v1/ready")
+
+
+@pytest.mark.anyio
+async def test_unknown_path_matches_problem_schema() -> None:
+    async with client_for(create_app(dummy_settings())) as client:
+        response = await client.get("/v1/nope")
+
+    assert response.headers["content-type"] == "application/problem+json"
+    schema_validator({"$ref": "#/components/schemas/Problem"}).validate(response.json())
+
+
+def test_contract_rejects_a_ready_problem_without_failing() -> None:
+    validator = schema_validator({"$ref": "#/components/schemas/ReadyProblem"})
+    body = {"type": "about:blank", "title": "Service Unavailable", "status": 503}
+
+    assert not validator.is_valid(body)
+    assert not validator.is_valid(body | {"failing": []})
+    assert not validator.is_valid(body | {"failing": ["mysql"]})
+    assert validator.is_valid(body | {"failing": ["redis"]})
