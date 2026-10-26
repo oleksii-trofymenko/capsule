@@ -18,5 +18,8 @@ module.exports = defineConfig([
       'no-console': 'error',
     },
   },
-  { ignores: ['dist/*', '.expo/*', 'ios/*', 'android/*', 'eslint.config.js'] },
+  // `**/` because the hook runs from the repository root, not from apps/mobile.
+  {
+    ignores: ['**/dist/', '**/.expo/', '**/ios/', '**/android/', '**/eslint.config.js'],
+  },
 ]);

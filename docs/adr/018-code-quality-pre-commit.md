@@ -17,11 +17,14 @@ One developer plus agents writes Python (API, agent, evals) and TypeScript (Expo
 
 ## Decision
 
-Every commit passes the hooks in `.pre-commit-config.yaml` (trailing whitespace, end of file, gitleaks, Ruff lint and format, mypy `strict` on `apps/api`, Prettier, ESLint and `tsc --noEmit` on `apps/mobile`, Conventional Commits with a required scope on the message), installed with `make hooks`; `make lint` runs the same hooks on all files, and settings live in the root `pyproject.toml` and `apps/mobile/` config files.
+Every commit passes the hooks in `.pre-commit-config.yaml` (trailing whitespace, end of file, gitleaks on staged changes, Ruff lint and format, mypy `strict` on `apps/api`, Prettier, ESLint and `tsc --noEmit` on `apps/mobile`, Conventional Commits with a required scope on the message), installed with `make hooks`; `make lint` runs the same hooks on all files plus gitleaks on unstaged changes and on the full Git history; hook revs are pinned to commit SHAs, and settings live in the root `pyproject.toml` and `apps/mobile/` config files.
 
 ## Consequences
 
 - Easier: one command for local checks and CI; tool versions pinned in one file; secrets blocked before the commit exists.
 - Harder: `make` on Windows needs `winget install ezwinports.make`; `pre-commit` needs `uv tool install pre-commit --python 3.13`. The mobile `package.json` must list `eslint`, `eslint-config-expo`, `typescript-eslint`, `prettier` and `typescript` as dev dependencies. mypy runs in an isolated environment without project dependencies; when the API skeleton lands (E0-06) it moves to a local hook run through `uv run` so FastAPI and Pydantic types are visible.
-- We will monitor: full hook run time (baseline in E0-04 notes), hooks bypassed with `--no-verify` (CI catches them in E0-05), gitleaks findings.
+- Secret scanning is git-based (staged, unstaged, history), not `gitleaks dir`: the directory scan ignores `.gitignore` and flags every developer's local `.env`. Untracked files are not scanned until they are staged, which is when the commit hook sees them.
+- Local hooks can be bypassed (`git commit --no-verify`, edits in the GitHub web UI), so E0-05 runs a full-history gitleaks scan on every PR and push, and GitHub secret scanning with push protection is enabled on the repository (free for public repositories).
+- Supply chain: hook revs are commit SHAs with a `# frozen: vX.Y.Z` comment. A bump is its own PR, made at least 7 days after the upstream release, links the release notes and is reviewed by security-engineer.
+- We will monitor: full hook run time (baseline in E0-04 notes), gitleaks findings in CI (E0-05).
 - Revisit when: a full run exceeds 30 s, or a faster single tool (for example Biome replacing ESLint + Prettier) supports the Expo rules we rely on.

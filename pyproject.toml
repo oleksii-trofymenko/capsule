@@ -17,6 +17,7 @@ select = [
   "ANN",           # type annotations
   "C4", "SIM", "RET", "PTH",
   "TID",           # tidy-imports: module boundaries (ADR-005)
+  "PGH003",        # no blanket type: ignore
   "RUF",
 ]
 
@@ -30,3 +31,4 @@ ban-relative-imports = "all"
 python_version = "3.13"
 strict = true
 warn_unreachable = true
+enable_error_code = ["ignore-without-code"]

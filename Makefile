@@ -6,5 +6,5 @@ help: ## List targets
 hooks: ## Install the pre-commit and commit-msg hooks
 	pre-commit install
 
-lint: ## Run every pre-commit hook on all files (same checks as on commit)
-	pre-commit run --all-files
+lint: ## Run every hook on all files, plus secret scans of unstaged changes and history
+	pre-commit run --all-files --hook-stage manual

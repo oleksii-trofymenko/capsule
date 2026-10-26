@@ -29,10 +29,10 @@ Then, in the repository:
 
 ```sh
 make hooks   # installs the pre-commit and commit-msg hooks
-make lint    # runs every hook on all files, same checks as on commit
+make lint    # every hook on all files, plus secret scans of unstaged changes and Git history
 ```
 
-Without `make`, use `pre-commit install` and `pre-commit run --all-files`. The first run builds the hook environments (about a minute); later runs are fast. Commit messages must look like `feat(agent): add budget validator node`. Do not bypass hooks with `--no-verify`.
+Without `make`, use `pre-commit install` and `pre-commit run --all-files --hook-stage manual`. The first run builds the hook environments (about a minute); later runs are fast. Commit messages need a type and a scope (the module), for example `feat(agent): add budget validator node`, `chore(repo): …`, `docs(adr): …`. Do not bypass hooks with `--no-verify`.
 
 ## How we work
 
