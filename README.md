@@ -6,7 +6,7 @@ Capsule is a mobile AI stylist. You describe an event and a budget (even €100)
 
 - Docker with Compose v2
 - Node.js LTS and the Expo CLI (`npx expo`)
-- Python 3.12 with uv (or pip)
+- Python 3.13 with uv (or pip)
 - Git and, optionally, the GitHub CLI (`gh`)
 
 ## Quick start

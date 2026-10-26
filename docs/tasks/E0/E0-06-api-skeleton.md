@@ -23,7 +23,7 @@ Every later backend card needs the same base: settings, logging, error format an
 - [ ] Structured JSON logs with a request id; no personal data.
 - [ ] Errors returned as RFC 9457 problem+json.
 - [ ] `/ready` returns 503 with the failing dependency named when Postgres or Redis is down.
-- [ ] Tests: unit for settings; integration for `/ready` up and down with Testcontainers; contract test against the OpenAPI file.
+- [ ] Tests: unit for settings; integration for `/ready` up and down against real Postgres and Redis (CI service containers, `integration` marker, ADR-016); contract test against the OpenAPI file.
 - [ ] `make test` passes locally; record the run time.
 
 ## Allowed files

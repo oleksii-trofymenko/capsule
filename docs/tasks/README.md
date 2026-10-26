@@ -22,4 +22,4 @@
 
 ## E0 order
 
-E0-01 first. Then E0-03, E0-04, E0-06, E0-08 and E0-09 can run in parallel. E0-05 after E0-04; E0-07 after E0-06.
+E0-01 first. Then E0-03, E0-04, E0-06, E0-08 and E0-09 can run in parallel. E0-05 after E0-04; E0-07 after E0-06. E0-10 (align docs with the accepted ADRs) before E0-06.

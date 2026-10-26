@@ -18,7 +18,7 @@ One command brings the backend up the same way on the home PC, on the laptop and
 ## Acceptance criteria
 
 - [ ] `apps/api/Dockerfile`: multi-stage, non-root user, pinned base image, health check on `/v1/health`.
-- [ ] `infra/compose/compose.base.yml`: api, postgres with pgvector, redis, minio — pinned versions, health checks, restart policies, named volumes.
+- [ ] `infra/compose/compose.base.yml`: api, postgres with pgvector, redis, seaweedfs (ADR-008; same Postgres/Redis image pins as CI) — pinned versions, health checks, restart policies, named volumes.
 - [ ] No ports exposed beyond `127.0.0.1`.
 - [ ] Services read configuration only from environment variables; `.env.example` complete.
 - [ ] `make up`, `make down`, `make logs` work.
