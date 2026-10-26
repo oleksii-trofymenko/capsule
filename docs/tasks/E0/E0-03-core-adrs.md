@@ -52,4 +52,5 @@ Agents must not re-decide the stack in every card. Ten short records fix the cor
   - Blueprint §4 and §12 still name MinIO, arq/Celery and Python 3.12+; update in its own `docs(blueprint)` commit. README prerequisites say Python 3.12.
   - Client-generated idempotency key for queued chat messages is a contract change (backend-engineer, chat card).
   - Verify SeaweedFS lifecycle, presigned URLs and SSE with an integration test before `media` relies on them.
-  - €50/month analytics spend trigger in ADR-004 to be confirmed by the owner.
+  - Owner decision 2026-10-26: the project runs at €0 — no paid services. ADR-004 uses free plans with no payment method; ADR-010 configures no cloud fallback (GPU down → "try again later").
+  - Unavoidable costs outside these ADRs, for the owner: App Store developer account (~€99/year) and Google Play (one-time ~€25) to publish; a domain for a named Cloudflare Tunnel (ADR-014).
