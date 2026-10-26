@@ -43,6 +43,57 @@ The body lists the dependencies that are `failing`.
 
 An image pin in `.github/workflows/ci.yml`, `infra/compose/compose.base.yml` or `apps/api/Dockerfile` changed without the others. Make the Postgres/Redis references (tag and digest) and the uv version identical in the same PR.
 
+## Permission denied on a data volume (E0-12)
+
+postgres, redis and seaweedfs start as fixed non-root users with no capabilities (`infra/compose/README.md`, "Container privileges"). They cannot fix the ownership of their volume themselves. This only happens with a volume written by root, for example a restore or a manual copy. Volumes created by `make up` already have the right owner.
+
+Symptoms in `$C logs <service>`:
+
+- postgres restarts; `initdb: error: could not access directory "/var/lib/postgresql/data": Permission denied`
+- seaweedfs restarts; `please verify /data is writable ... permission denied`
+- redis exits with `Can't open or create append-only dir appendonlydir: Permission denied`, or it stays healthy and logs `Opening the temp file for AOF rewrite ...: Permission denied`. In the second case data written since the last good AOF write is at risk.
+
+Fix the ownership with a one-off root container that has no network and only two capabilities. `CHOWN` changes the owner. `DAC_READ_SEARCH` lets it enter `0700` directories owned by another uid, for example a PGDATA restored from an image that runs Postgres as uid 70. The data is kept. Tested on all three, and on a uid-70 PGDATA:
+
+```sh
+$C stop <service>
+img=$($C config --images <service>)   # also works after make down
+MSYS_NO_PATHCONV=1 docker run --rm --network none --user 0:0 \
+  --cap-drop ALL --cap-add CHOWN --cap-add DAC_READ_SEARCH --security-opt no-new-privileges:true \
+  -v capsule_<volume>:/v --entrypoint chown "$img" -R <uid:gid> /v
+make up
+```
+
+For postgres, the restored data directory must also be mode `0700`, or Postgres refuses to start. Before `make up`, run as the new owner, with no capability:
+
+```sh
+MSYS_NO_PATHCONV=1 docker run --rm --network none --user 999:999 --cap-drop ALL \
+  --security-opt no-new-privileges:true -v capsule_pg_data:/v --entrypoint chmod "$img" 0700 /v
+```
+
+| Service | Volume | uid:gid |
+| --- | --- | --- |
+| postgres | `pg_data` | `999:999` |
+| redis | `redis_data` | `999:1000` |
+| seaweedfs | `seaweed_data` | `1000:1000` |
+
+After an image bump, a changed uid shows the same symptoms. Check the image's user (`docker run --rm --entrypoint id <image> postgres`, `redis` or `seaweed`) before chowning, and update `user:` in `compose.base.yml` if it differs.
+
+To check the privileges of the running containers (expected: no uid 0, every `Cap*` value all zeros):
+
+```sh
+for s in api postgres redis seaweedfs; do
+  echo "$s: $(docker inspect --format '{{.Config.User}} add={{.HostConfig.CapAdd}} drop={{.HostConfig.CapDrop}} ro={{.HostConfig.ReadonlyRootfs}}' "$($C ps -q $s)")"
+  $C exec $s grep -E '^(Uid|CapEff|CapBnd)' /proc/1/status
+done
+```
+
+Never start redis as root with a reduced capability set. Without `SETUID`/`SETGID` its entrypoint does not fail. It runs redis-server as root.
+
+## CI fails in `check-privileges`
+
+`check-privileges: <files>: <service>: <problem>` means a service in `compose.base.yml` (or the test overlay) has no non-root `user:`, lacks `cap_drop: [ALL]`, has a `cap_add`, or lacks `no-new-privileges:true`. Restore the setting. If a service truly needs a capability, that is a security decision: get security-engineer review, and change the check in the same PR. Run it locally with `bash infra/compose/check-privileges.sh`.
+
 ## Reset the stack (deletes all local data)
 
 Only on a development machine, or with a verified Postgres backup:

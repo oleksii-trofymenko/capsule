@@ -40,6 +40,19 @@ The worker (E3), GPU services, observability and the tunnel are out of scope her
 - The Postgres and Redis pins must equal the CI service containers (ADR-016). The uv image in `apps/api/Dockerfile` must equal `UV_VERSION` in CI. `check-pins.sh` checks both in the CI lint job; run it by hand with `bash infra/compose/check-pins.sh`.
 - Change all of these in the same PR.
 
+## Container privileges (E0-12)
+
+Every service runs as a fixed non-root user, with `cap_drop: [ALL]`, no added capability and `no-new-privileges`:
+
+| Service | `user` | Root filesystem |
+| --- | --- | --- |
+| `api` | `10001:10001` | read-only, tmpfs `/tmp` (64 MB) |
+| `postgres` | `999:999` (image's `postgres`) | read-only, tmpfs `/tmp` (64 MB) and `/var/run/postgresql` (1 MB) |
+| `redis` | `999:1000` (image's `redis`) | read-only, tmpfs `/tmp` (64 MB) |
+| `seaweedfs` | `1000:1000` (image's `seaweed`) | writable, because Compose cannot place `configs.content` in a read-only container; tmpfs `/tmp` (64 MB, Unix sockets) |
+
+`check-privileges.sh` (run by `check-pins.sh` in the CI lint job) fails if any service has no non-root `user`, lacks `cap_drop: [ALL]`, has a `cap_add`, or lacks `no-new-privileges:true`. The uids belong to the pinned images. After an image bump, check them with `docker run --rm --entrypoint id <image> <user>` and the runbook's privilege check.
+
 ## Media encryption at rest (ADR-008)
 
 - SeaweedFS runs with `-s3.encryptVolumeData`: every uploaded chunk is encrypted with its own key. The keys are stored in the filer metadata on the same disk, so this alone does not protect against a stolen disk.
@@ -55,4 +68,4 @@ The worker (E3), GPU services, observability and the tunnel are out of scope her
 
 ## Runbook
 
-[`docs/runbooks/compose-stack.md`](../../docs/runbooks/compose-stack.md): stack not healthy, `.env` problems, pin drift, SeaweedFS exposure check, resetting volumes.
+[`docs/runbooks/compose-stack.md`](../../docs/runbooks/compose-stack.md): stack not healthy, `.env` problems, pin drift, SeaweedFS exposure check, permission errors on data volumes, resetting volumes.

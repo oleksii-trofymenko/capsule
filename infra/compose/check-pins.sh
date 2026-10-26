@@ -3,6 +3,7 @@
 # - postgres and redis service images (tag and digest) in ci.yml and compose.base.yml;
 # - the uv version in ci.yml (UV_VERSION) and the uv image in apps/api/Dockerfile.
 # Run from the repo root (CI lint job, or by hand). Bump all files in the same PR.
+# Also runs check-privileges.sh (non-root, no capabilities; E0-12).
 set -euo pipefail
 
 ci=.github/workflows/ci.yml
@@ -37,5 +38,7 @@ if [ -z "$uv_ci" ] || [ "$uv_ci" != "$uv_docker" ]; then
 else
   echo "check-pins: uv ok ($uv_ci)"
 fi
+
+bash "$(dirname "$0")/check-privileges.sh" || status=1
 
 exit "$status"
