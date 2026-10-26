@@ -43,12 +43,13 @@ The `agent-node` skill names model aliases (`fast`, `guide`, `vision`) and an "i
   - Checkpoints: `agent_checkpoint` schema by an Alembic migration (backend-engineer card), pinned package, `search_path`, deleted by a SAQ job on close, TTL expiry and "Delete my data".
   - Tracing: one source per model call (gateway callback or node), chosen in the E3 gateway card; records the resolved model.
   - Sweep fixed 21 conflicts across 17 files: release (store/EAS rollout, not flags; source maps; `/v1/ready`), load-test (guest path), security-check (audit and bump rules), db-migration (HNSW vs B-tree), mobile-screen (both themes), eval-run (routes, VRAM settings, fallback rate), agents (platform `ci-ok`, product-designer reads docs/design, mobile dependency rule), apps/mobile (storage, dev build, consent, UI-primitives ADR, borders), apps/api (route names, Ruff boundaries, migrations, SAQ, uvicorn, dev-only test tools), infra (digest pins, compose.test), blueprint (§4–§13 lines, precedence note, E0 roadmap ticked).
-  - Blueprint §11 alerts split in two — "try again later" > 1 % of consultations for 10 min (99 % SLO) and gateway fallback rate > 30 % on any route for 10 min. Thresholds proposed by ai-engineer; owner to confirm.
+  - Blueprint §11 alerts split in two — "try again later" > 1 % of consultations for 10 min (99 % SLO) and gateway fallback rate > 30 % on any route for 10 min. Thresholds proposed by ai-engineer; marked "proposed" in the blueprint until the owner confirms.
+- Harness rules beyond the ADRs (fallback only to a model already resident in VRAM; checkpoint migration copies `checkpoint_migrations`; one tracing source): Orchestrator decisions on ai-engineer advice — the E3 gateway card turns them into ADR-011/012 material if the owner treats them as architecture.
 - Reviews: ai-engineer request changes (fallback paths mixed, missing busy-GPU trigger, stacked retries, VRAM rule, checkpoint ownership, tracing source, eval contamination, alert split) → applied. code-reviewer request changes (same fallback blocker + 8 suggestions) → applied.
-- Numbers: 26 files touched over two commits per area; 21 conflicts fixed; 0 ADRs edited.
+- Numbers: 18 files changed (17 rule/doc files + this card) in four commits (blueprint commits separate); 21 conflicts fixed; 0 ADRs edited.
 - Left for later (listed, not fixed here):
   - security-check skill gaps: media (encrypted at rest, private buckets, ≤ 24 h, presigned limits — ADR-008); mobile (MMKV excluded from backup, wipe on logout/reinstall — ADR-003; Sentry/PostHog privacy config — ADR-004); LLM (no cloud route; photo route needs security-engineer sign-off — ADR-010).
   - security-engineer agent: reference the ADR-018/019 bump rules. product-analyst agent: events only after usage consent.
-  - blueprint §9 CI pipeline line (~:276) doesn't mention `ci-ok` or path-skipped jobs; §4 lists Hypothesis (allowed via §4, not in ADR-016).
+  - blueprint §9 CI pipeline line (~:276) doesn't mention `ci-ok` or path-skipped jobs.
   - E3 gateway card: VRAM budget numbers (ADR-011/012), where the circuit breaker lives (blueprint §10), and a test that a client timeout really stops generation in Ollama through LiteLLM.
   - Checkpoint TTL value comes from the E1 guest-data retention ADR.
