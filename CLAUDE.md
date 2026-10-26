@@ -35,12 +35,15 @@ Specialists cannot start other agents. Every hand-off goes through you, with a s
 
 ## Commands
 
-No Makefile yet: each target is created by the card in brackets. Keep this list in sync with the Makefile.
+Each target names the card that created it. Keep this list in sync with the Makefile. Run from Git Bash on Windows.
 
 - `make hooks` — install the pre-commit and commit-msg hooks (E0-04)
 - `make lint` — every pre-commit hook on all files, plus secret scans of unstaged changes and Git history (E0-04)
-- `make test` — API unit, contract and integration tests; starts throwaway Postgres/Redis containers unless `CAPSULE_TEST_DATABASE_URL` and `CAPSULE_TEST_REDIS_URL` are both set (E0-06). Run from Git Bash on Windows.
-- `make up` / `make down` / `make logs` — start, stop and tail the stack (E0-07)
+- `make test` — API unit, contract and integration tests; starts throwaway Postgres/Redis containers unless `CAPSULE_TEST_DATABASE_URL` and `CAPSULE_TEST_REDIS_URL` are both set (E0-06).
+- `make up` — create `.env` with random secrets if missing, build and start the Compose stack, wait for `/v1/ready` (E0-07)
+- `make down` — stop the stack, keep data (E0-07)
+- `make logs` — tail logs; `make logs s=api` for one service (E0-07)
+- `bash infra/compose/check-seaweedfs.sh` — after `make up`, prove the media store rejects unsigned and unauthenticated access (E0-07)
 - `make eval` — eval suite in `ml/evals` (later: E3, with ADR-017)
 
 Until a target exists, say so in your report instead of inventing a replacement.
