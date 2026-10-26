@@ -11,7 +11,17 @@ Capsule is a mobile AI stylist. You describe an event and a budget (even €100)
 
 ## Quick start
 
-Coming in E0-07: `make up` will start the whole stack from a clean clone.
+With Docker Desktop running, from Git Bash on Windows or any shell on Linux/macOS:
+
+```sh
+make up     # first run: creates .env with random secrets, builds the API, waits for /v1/ready
+curl http://127.0.0.1:8000/v1/ready
+make logs   # follow logs; `make logs s=api` for one service
+make down   # stop; data volumes are kept
+make test   # unit and integration tests against throwaway Postgres and Redis
+```
+
+The API is the only service on the host, at `127.0.0.1:8000`. What each service does and how to reach it: [`infra/compose/README.md`](infra/compose/README.md). When something fails: [`docs/runbooks/compose-stack.md`](docs/runbooks/compose-stack.md).
 
 ## Development
 
