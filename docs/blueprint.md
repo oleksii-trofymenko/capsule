@@ -2,7 +2,7 @@
 
 > **Implementation copy.** The project owner keeps the working version of this blueprint as a private doc. This file is the English version for implementation, current as of 2026-10-26.
 >
-> **Precedence:** an accepted ADR in `docs/adr/` and the root `CLAUDE.md` win over this file. Known differences from the owner's version: the Orchestrator is the main Claude Code session, not a subagent; Go is optional and needs a benchmark plus an ADR before use; accepted ADRs and owner decisions changed some choices (2026-10-26) — Python 3.13 (ADR-005), SAQ worker (ADR-006), SeaweedFS instead of MinIO with media deleted within 24 h and never backed up (ADR-008), MMKV-only mobile cache with SQLite deferred (ADR-003), no cloud LLM fallback while the budget is €0 (ADR-010), CI service containers instead of Testcontainers (ADR-016); guest first — sign-up after the first guide, so activation and time to first guide are measured from onboarding (E0-08, `docs/metrics.md`). When the owner's version changes, update this file in its own commit (`docs(blueprint): …`).
+> **Precedence:** an accepted ADR in `docs/adr/` and the root `CLAUDE.md` win over this file. Known differences from the owner's version: the Orchestrator is the main Claude Code session, not a subagent; Go is optional and needs a benchmark plus an ADR before use; accepted ADRs and owner decisions changed some choices (2026-10-26) — Python 3.13 (ADR-005), SAQ worker (ADR-006), SeaweedFS instead of MinIO with media deleted within 24 h and never backed up (ADR-008), MMKV-only mobile cache with SQLite deferred (ADR-003), no cloud LLM fallback while the budget is €0 (ADR-010), CI service containers instead of Testcontainers (ADR-016); guest first — sign-up after the first guide, so activation and time to first guide are measured from onboarding (E0-08, `docs/metrics.md`); consent-gated Sentry and PostHog with two opt-in switches (E0-08); Plus Jakarta Sans and a dark theme (E0-09); staged rollout through store channels and EAS Update, not flags (ADR-004); one CI workflow with the required check `ci-ok` (ADR-019); LLM fallbacks are local routes or "try again later" (ADR-010). When the owner's version changes, update this file in its own commit (`docs(blueprint): …`).
 
 ## 1. The problem we solve
 
@@ -174,8 +174,8 @@ Follow-up questions return to request parsing; going over budget returns to prod
 
 **Rules for every node:**
 
-- Input and output are Pydantic schemas; invalid model output → one retry, then the route's configured fallback (another local route; no cloud route while the budget is €0, ADR-010).
-- A timeout per node and for the whole graph; state checkpointed in Postgres so the conversation resumes after a follow-up.
+- Input and output are Pydantic schemas; invalid model output → one repair retry, then a typed failure ("try again later"). Gateway errors and per-route timeouts (the busy-GPU signal) fall back to the route's configured local fallback; no cloud route while the budget is €0 (ADR-010).
+- Timeouts nest: gateway route < node < whole graph; state checkpointed in Postgres so the conversation resumes after a follow-up or a "try again later".
 - Every model call is traced in Langfuse with node name, model, tokens and latency.
 - Model routing: request parsing and follow-ups use the `agent-parse` route; guide generation uses `agent-guide` (local only while the budget is €0, ADR-010).
 - Photo analysis describes clothes, colours and silhouette; it never rates appearance or infers sensitive traits.
@@ -302,7 +302,7 @@ Every feature takes the same path. Going back a step is a normal part of the pro
 - TypeScript strict, no `any`; API types generated from OpenAPI, not hand-written.
 - Heavy work off the JS thread: Reanimated for animation, FlashList for lists, memoisation only where a measured problem exists.
 - Every screen has loading / empty / error / offline states.
-- Tokens only in SecureStore; nothing sensitive in MMKV, logs or Sentry breadcrumbs (MMKV holds no credentials or photos, ADR-003).
+- Tokens only in SecureStore; MMKV holds no credentials or photos (ADR-003); nothing sensitive in logs or Sentry breadcrumbs.
 - Accessibility: labels, touch targets ≥ 44 pt (iOS) / 48 dp (Android), Dynamic Type.
 - Permissions (camera, microphone, photos) requested at the moment of need, with a reason.
 - New dependencies checked for bundle size and Expo support.
@@ -349,7 +349,7 @@ Every requirement has a numeric target and a way to check it. LLM generation has
 | Stability | Idempotency keys for POST, retry with backoff, a timeout on every external call, circuit breaker, graceful degradation (no GPU → a "try again later" message; cloud once the budget allows, ADR-010) | Chaos tests: stop Ollama, Redis |
 | Security | OWASP API Top 10, all input validated, parameterised queries, JWT + refresh rotation, rate limiting, sensitive fields encrypted, secrets outside code | Security checklist, scanners (bandit, pip-audit, gitleaks) |
 | API | OpenAPI contract, `/v1` versioning, one error format | Contract tests in CI |
-| Observability | Structured JSON logs, RED metrics, OpenTelemetry traces, `/health` and `/ready` | Grafana dashboard |
+| Observability | Structured JSON logs, RED metrics, OpenTelemetry traces, `/v1/health` and `/v1/ready` | Grafana dashboard |
 | Tests | Unit ≥ 80% coverage of domain logic; integration with a real database; load tests before release | CI + k6 report |
 
 ## 11. Observability and personal verification
@@ -373,12 +373,13 @@ Goal: the project owner opens one dashboard and explains in two minutes, with nu
 - Full guide p95 more than 50% over target for 10 minutes.
 - Job queue > 20, or the oldest job > 2 minutes.
 - GPU temperature > 83 °C or VRAM > 95%.
-- Gateway fallback or "try again later" > 30% of requests (local inference degrading; ADR-010).
+- "Try again later" answers > 1% of consultations for 10 minutes (99% SLO).
+- Gateway fallback rate on any route > 30% for 10 minutes (local inference degrading; ADR-010).
 - Crash-free rate of a new release < 99.5%.
 
 ### How the project owner tests personally
 
-1. **From scratch:** one command brings up the whole stack; `/ready` returns OK.
+1. **From scratch:** one command brings up the whole stack; `/v1/ready` returns OK.
 2. **Smoke flow on the phone:** as a guest, "date night look, €100" → follow-up → photo → guide → save (sign up). Find the request in Langfuse and see each agent step with time and tokens.
 3. **Eval:** one command runs 50–100 scenarios and reports mean score, budget compliance and the 5 worst answers.
 4. **Load:** k6 at 10 / 25 / 50 virtual users; see where p95 breaks and what saturates (GPU, queue, database).
