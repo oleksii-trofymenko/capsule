@@ -73,7 +73,6 @@ The `stack (compose smoke)` job in `.github/workflows/ci.yml` runs on PRs that t
   $R down --volumes; rm -rf "$d"
   ```
 
-
 The log dump shows only `ps` output and container logs. Do not add `compose config` or `docker inspect` to the job, because both print the interpolated secrets.
 
 ## Permission denied on a data volume (E0-12)

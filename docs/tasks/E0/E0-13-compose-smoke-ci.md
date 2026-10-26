@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | review |
+| Status | done |
 | Owner | platform-engineer |
 | Reviewers | code-reviewer, security-engineer |
 | Estimate | S |
@@ -18,7 +18,7 @@
 ## Acceptance criteria
 
 - [x] CI job builds the api image and runs the Compose stack with throwaway secrets, waits for `/v1/ready` 200, runs `infra/compose/check-seaweedfs.sh`, then tears down.
-- [x] Runs only when `apps/api/**`, `infra/compose/**`, `Makefile` or the workflow change, plus on `main`; included in `ci-ok`.
+- [x] Runs only when `apps/api/**`, `infra/compose/**`, `.env.example`, `Makefile` or the shared files (workflows, `contracts/`, `.pre-commit-config.yaml`) change, plus on `main` and the daily run; included in `ci-ok`.
 - [x] Actions and images pinned by SHA/digest; no secrets from the repo.
 - [x] Record the added CI time.
 
@@ -44,10 +44,11 @@
   - Throwaway secrets: env-init generates them on the runner, every `change-me` key is masked before any later step; no repo secrets, `contents: read`, no new actions or images.
   - Trigger `changes.stack`: `apps/api/**`, `infra/compose/**`, `.env.example`, plus the shared files (workflows, `Makefile`, `contracts/`, `.pre-commit-config.yaml`) — slightly broader than the card's list, accepted (~30 s). Always on `main` pushes and the daily run. Added to `ci-ok.needs`.
   - No Docker layer cache: buildx GHA cache needs a new third-party action (ADR-019); the build takes ~10 s, so not worth it.
+- QA: pass (CI evidence for all criteria; both runbook snippets run as written).
 - Reviews: code-reviewer changes requested (only blocker: runbook missing from the card's allowed files — fixed here; suggestions `.env.example` trigger, runnable runbook steps, comments → applied). security-engineer approve (low: `.env.example` trigger → applied; notes on masks and log-prefix → comment added).
 - Numbers:
   - `stack` job 71–79 s (pull 11–16 s, build 7–10 s, up 4–5 s, SeaweedFS check 1–2 s, restart check 24–32 s, teardown 10–11 s). Runs in parallel.
-  - CI wall time 85–95 s on stack-touching PRs (was 57–58 s); docs-only and mobile-only PRs skip the job.
+  - CI wall time 82–95 s on stack-touching PRs (was 54–68 s on the last main runs); docs-only and mobile-only PRs skip the job.
   - Proof runs: green 40409740034, 40410491130, 40411305273; red 40410260803 (re-opened Iceberg port → `stack` and `ci-ok` red). Secret scan of the job logs: 0 generated values.
 - Left for later:
   - E0-14: add a signed S3 PUT/GET after the restart once the SeaweedFS health check waits for the volume server.
