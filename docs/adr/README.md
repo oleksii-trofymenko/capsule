@@ -23,5 +23,5 @@ One file per decision: `docs/adr/NNN-short-title.md`, from `000-template.md`. Ac
 | 015 | Secrets: SOPS / Docker secrets locally, a vault in the cloud | planned | E1 |
 | 016 | Test strategy: pytest, Testcontainers, RNTL, Maestro, k6 | planned | E0-05 |
 | 017 | Eval runner and LLM-as-judge in CI | planned | E3 |
-| 018 | Code quality: Ruff, mypy strict, ESLint, Prettier, pre-commit, Conventional Commits | planned | E0-04 |
+| [018](018-code-quality-pre-commit.md) | Code quality: Ruff, mypy strict, ESLint, Prettier, pre-commit, Conventional Commits | proposed | E0-04 |
 | 019 | CI/CD: GitHub Actions, GHCR, EAS Build/Update | planned | E0-05 |

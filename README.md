@@ -13,6 +13,27 @@ Capsule is a mobile AI stylist. You describe an event and a budget (even €100)
 
 Coming in E0-07: `make up` will start the whole stack from a clean clone.
 
+## Development
+
+Every commit runs the hooks in `.pre-commit-config.yaml` (ADR-018): Ruff, mypy strict, ESLint, Prettier, `tsc`, gitleaks, whitespace fixes and a Conventional Commits check on the message.
+
+Install once per machine (free tools only):
+
+```sh
+uv tool install pre-commit --python 3.13
+# Windows only, for make:
+winget install ezwinports.make --accept-package-agreements --accept-source-agreements
+```
+
+Then, in the repository:
+
+```sh
+make hooks   # installs the pre-commit and commit-msg hooks
+make lint    # runs every hook on all files, same checks as on commit
+```
+
+Without `make`, use `pre-commit install` and `pre-commit run --all-files`. The first run builds the hook environments (about a minute); later runs are fast. Commit messages must look like `feat(agent): add budget validator node`. Do not bypass hooks with `--no-verify`.
+
 ## How we work
 
 - [`CLAUDE.md`](CLAUDE.md) — rules for everyone working in this repo, people and agents
