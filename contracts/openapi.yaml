@@ -38,7 +38,7 @@ paths:
   /v1/ready:
     get:
       operationId: getReady
-      summary: Readiness. Postgres and Redis answer within the check timeout.
+      summary: Readiness. Postgres and Redis each answer within the readiness probe timeout.
       tags: [ops]
       parameters:
         - $ref: "#/components/parameters/RequestId"
@@ -58,7 +58,7 @@ paths:
                   postgres: ok
                   redis: ok
         "503":
-          description: At least one dependency failed or timed out; `failing` names it.
+          description: At least one dependency failed or exceeded the probe timeout; `failing` names it.
           headers:
             X-Request-ID:
               $ref: "#/components/headers/RequestId"

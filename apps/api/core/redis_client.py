@@ -6,7 +6,7 @@ from core.config import Settings
 
 
 def create_redis(settings: Settings) -> Redis:
-    timeout = settings.ready_check_timeout_s
+    timeout = settings.redis_socket_timeout_s
     return Redis.from_url(
         settings.redis_url.get_secret_value(),
         socket_connect_timeout=timeout,

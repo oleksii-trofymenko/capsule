@@ -18,14 +18,26 @@ def test_from_env_reads_variables_and_applies_defaults() -> None:
     )
     assert settings.redis_url.get_secret_value() == "redis://localhost:6379/0"
     assert settings.log_level == "INFO"
-    assert settings.ready_check_timeout_s == 1.0
+    assert settings.ready_probe_timeout_s == 1.0
+    assert settings.database_connect_timeout_s == 5
+    assert settings.redis_socket_timeout_s == 5.0
 
 
 def test_from_env_reads_optional_variables() -> None:
-    settings = Settings.from_env(REQUIRED | {"LOG_LEVEL": "DEBUG", "READY_CHECK_TIMEOUT_S": "2.5"})
+    settings = Settings.from_env(
+        REQUIRED
+        | {
+            "LOG_LEVEL": "DEBUG",
+            "READY_PROBE_TIMEOUT_S": "2.5",
+            "DATABASE_CONNECT_TIMEOUT_S": "3",
+            "REDIS_SOCKET_TIMEOUT_S": "0.75",
+        }
+    )
 
     assert settings.log_level == "DEBUG"
-    assert settings.ready_check_timeout_s == 2.5
+    assert settings.ready_probe_timeout_s == 2.5
+    assert settings.database_connect_timeout_s == 3
+    assert settings.redis_socket_timeout_s == 0.75
 
 
 def test_missing_variable_is_named() -> None:
@@ -50,10 +62,21 @@ def test_invalid_url_is_rejected_without_echoing_it(name: str, value: str) -> No
     assert "hunter2" not in str(caught.value)
 
 
-@pytest.mark.parametrize("value", ["0", "-1", "11", "soon"])
-def test_ready_timeout_must_be_a_sane_number(value: str) -> None:
-    with pytest.raises(ConfigError, match="READY_CHECK_TIMEOUT_S"):
-        Settings.from_env(REQUIRED | {"READY_CHECK_TIMEOUT_S": value})
+@pytest.mark.parametrize(
+    ("name", "value"),
+    [
+        ("READY_PROBE_TIMEOUT_S", "0"),
+        ("READY_PROBE_TIMEOUT_S", "11"),
+        ("READY_PROBE_TIMEOUT_S", "soon"),
+        ("DATABASE_CONNECT_TIMEOUT_S", "0"),
+        ("DATABASE_CONNECT_TIMEOUT_S", "1.5"),  # libpq takes whole seconds
+        ("REDIS_SOCKET_TIMEOUT_S", "-1"),
+        ("REDIS_SOCKET_TIMEOUT_S", "61"),
+    ],
+)
+def test_timeouts_must_be_sane_numbers(name: str, value: str) -> None:
+    with pytest.raises(ConfigError, match=name):
+        Settings.from_env(REQUIRED | {name: value})
 
 
 def test_secrets_are_hidden_in_repr() -> None:

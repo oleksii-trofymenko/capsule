@@ -1,6 +1,7 @@
 """Structured JSON logs on stdout, one object per line, with the request id of the current request.
 
-Only the fields listed here are emitted, so `extra=` cannot smuggle personal data into the logs.
+Only `extra=` keys are allow-listed. `msg` and `exc` are free text, so callers must keep personal
+data out of messages and exception text; review this when database writes land.
 """
 
 import json
@@ -13,7 +14,7 @@ from typing import TextIO
 request_id_var: ContextVar[str | None] = ContextVar("request_id", default=None)
 
 # `extra=` keys that may appear in a log line. Keep them free of personal data.
-ALLOWED_EXTRA = ("method", "path", "status", "duration_ms", "check", "error", "failing")
+ALLOWED_EXTRA = ("method", "path", "status", "duration_ms", "check", "error")
 
 
 class JsonFormatter(logging.Formatter):

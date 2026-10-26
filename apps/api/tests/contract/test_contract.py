@@ -3,6 +3,8 @@
 Readiness here uses fake probes; tests/integration repeats the checks against real services.
 """
 
+from typing import Any
+
 import pytest
 from jsonschema import Draft202012Validator
 
@@ -51,6 +53,21 @@ def test_app_serves_exactly_the_declared_operations() -> None:
     }
 
     assert served == declared
+
+
+def test_app_declares_the_contract_status_codes() -> None:
+    # FastAPI does not declare the 500 that the middleware returns, so it is left out.
+    def statuses(paths: dict[str, Any]) -> dict[tuple[str, str], set[str]]:
+        return {
+            (path, method): set(operation["responses"]) - {"500"}
+            for path, item in paths.items()
+            for method, operation in item.items()
+            if method in HTTP_METHODS
+        }
+
+    app_paths = create_app(dummy_settings()).openapi()["paths"]
+
+    assert statuses(app_paths) == statuses(contract()["paths"])
 
 
 @pytest.mark.anyio

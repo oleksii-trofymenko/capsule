@@ -25,5 +25,6 @@ Add httpx, PyYAML and jsonschema (plus their typeshed stubs types-PyYAML and typ
 - Easier: in-process API tests with lifespan; every response in unit, contract and integration tests is checked against the contract the mobile client is generated from.
 - Harder: three more packages (and their transitive dependencies: httpcore, h11, attrs, referencing, rpds-py, jsonschema-specifications) in pip-audit's scope; `$ref` resolution in our helper covers `#/components/...` only.
 - Versions are resolved with `exclude-newer` in `apps/api/pyproject.toml` (initially 2026-10-19T00:00:00Z), so every release is at least 7 days old (ADR-018, ADR-019).
+- Format checks: jsonschema only checks formats whose optional libraries are installed, so `format: uri-reference` in the contract is not enforced by the contract tests (no extra dependency is added for it); patterns, enums, types and required fields are.
 - We will monitor: pip-audit findings for these packages, contract-test failures that turn out to be helper bugs.
 - Revisit when: endpoints accept user input and property-based contract testing (Schemathesis) pays for itself, or the helper grows past ~200 lines.

@@ -14,7 +14,9 @@ ENV_VARS: dict[str, str] = {
     "database_url": "DATABASE_URL",
     "redis_url": "REDIS_URL",
     "log_level": "LOG_LEVEL",
-    "ready_check_timeout_s": "READY_CHECK_TIMEOUT_S",
+    "ready_probe_timeout_s": "READY_PROBE_TIMEOUT_S",
+    "database_connect_timeout_s": "DATABASE_CONNECT_TIMEOUT_S",
+    "redis_socket_timeout_s": "REDIS_SOCKET_TIMEOUT_S",
 }
 
 
@@ -38,7 +40,11 @@ class Settings(BaseModel):
     database_url: SecretStr
     redis_url: SecretStr
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
-    ready_check_timeout_s: float = Field(default=1.0, gt=0, le=10)
+    # Budget for each /v1/ready probe, enforced with asyncio.timeout around the whole call.
+    ready_probe_timeout_s: float = Field(default=1.0, gt=0, le=10)
+    # Client timeouts for normal traffic. libpq takes whole seconds.
+    database_connect_timeout_s: int = Field(default=5, ge=1, le=60)
+    redis_socket_timeout_s: float = Field(default=5.0, gt=0, le=60)
 
     @field_validator("database_url", mode="before")
     @classmethod

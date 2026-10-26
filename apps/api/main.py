@@ -26,8 +26,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         try:
             yield
         finally:
-            await app.state.redis.aclose()
-            await app.state.engine.dispose()
+            try:
+                await app.state.redis.aclose()
+            finally:
+                await app.state.engine.dispose()
 
     # The contract lives in contracts/openapi.yaml; the app does not publish a second one.
     app = FastAPI(

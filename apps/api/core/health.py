@@ -73,7 +73,7 @@ async def ready(
     probes: Annotated[dict[Dependency, Probe], Depends(get_probes)],
 ) -> Ready | JSONResponse:
     results = await asyncio.gather(
-        *(_check(name, probe, settings.ready_check_timeout_s) for name, probe in probes.items())
+        *(_check(name, probe, settings.ready_probe_timeout_s) for name, probe in probes.items())
     )
     failing = [name for name in results if name is not None]
     if failing:

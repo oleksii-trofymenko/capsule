@@ -5,7 +5,7 @@ import json
 import time
 
 import pytest
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 
 from core.health import Dependency, Probe, get_probes
 from main import create_app
@@ -29,7 +29,7 @@ async def _hangs() -> None:
 
 
 def _app_with(probes: dict[Dependency, Probe], timeout_s: float = 1.0) -> FastAPI:
-    app = create_app(dummy_settings(ready_check_timeout_s=timeout_s))
+    app = create_app(dummy_settings(ready_probe_timeout_s=timeout_s))
     app.dependency_overrides[get_probes] = lambda: probes
     return app
 
@@ -114,6 +114,22 @@ async def test_wrong_method_is_a_problem_with_allow_header() -> None:
     assert response.status_code == 405
     assert response.headers["content-type"] == PROBLEM
     assert response.headers["allow"] == "GET"
+
+
+async def test_non_string_http_detail_is_dropped_not_a_500() -> None:
+    app = create_app(dummy_settings())
+
+    @app.get("/test/conflict")
+    async def conflict() -> None:
+        raise HTTPException(status_code=409, detail={"internal": "row-id-7"})
+
+    async with client_for(app) as client:
+        response = await client.get("/test/conflict")
+
+    assert response.status_code == 409
+    assert response.headers["content-type"] == PROBLEM
+    assert "detail" not in response.json()
+    assert "row-id-7" not in response.text
 
 
 async def test_validation_error_does_not_echo_input() -> None:

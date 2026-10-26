@@ -47,7 +47,7 @@ class RequestContextMiddleware:
             if message["type"] == "http.response.start":
                 response_started = True
                 status = message["status"]
-                MutableHeaders(scope=message).append(REQUEST_ID_HEADER, request_id)
+                MutableHeaders(scope=message)[REQUEST_ID_HEADER] = request_id
             await send(message)
 
         try:

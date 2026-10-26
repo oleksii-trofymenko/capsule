@@ -57,8 +57,9 @@ def internal_error() -> JSONResponse:
 async def _http_exception(_: Request, exc: Exception) -> JSONResponse:
     if not isinstance(exc, StarletteHTTPException):
         raise exc
-    # Keep a specific client-error message; drop the default phrase and any 5xx detail.
-    detail = exc.detail if exc.status_code < 500 else None
+    # Keep a specific client-error message; drop the default phrase, any 5xx detail and any
+    # non-string detail (a dict or list could expose internals and would not fit the schema).
+    detail = exc.detail if isinstance(exc.detail, str) and exc.status_code < 500 else None
     if detail == title_for(exc.status_code):
         detail = None
     return problem_response(

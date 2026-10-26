@@ -9,6 +9,7 @@ import os
 import httpx
 import pytest
 from pydantic import SecretStr
+from sqlalchemy.engine import make_url
 
 from core.config import ConfigError, Settings
 from main import create_app
@@ -25,9 +26,14 @@ DOWN_TIMEOUT_S = 0.5
 @pytest.fixture
 def settings() -> Settings:
     try:
-        return Settings.from_env(os.environ)
+        settings = Settings.from_env(os.environ)
     except ConfigError as exc:
         pytest.fail(f"Integration tests need DATABASE_URL and REDIS_URL ({exc}). Run `make test`.")
+    # Guard against a shell that points at a real database: test databases end in _test.
+    database = make_url(settings.database_url.get_secret_value()).database or ""
+    if not database.endswith("_test"):
+        pytest.fail("DATABASE_URL must name a database ending in _test for integration tests.")
+    return settings
 
 
 async def _get_ready(settings: Settings) -> httpx.Response:
@@ -58,7 +64,7 @@ async def test_ready_when_postgres_and_redis_are_up(settings: Settings) -> None:
 async def test_not_ready_names_what_is_down(
     settings: Settings, overrides: dict[str, object], failing: list[str]
 ) -> None:
-    down = settings.model_copy(update=overrides | {"ready_check_timeout_s": DOWN_TIMEOUT_S})
+    down = settings.model_copy(update=overrides | {"ready_probe_timeout_s": DOWN_TIMEOUT_S})
 
     response = await _get_ready(down)
 
