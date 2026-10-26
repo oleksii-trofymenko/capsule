@@ -46,7 +46,7 @@ Every service runs as a fixed non-root user, with `cap_drop: [ALL]`, no added ca
 
 | Service | `user` | Root filesystem |
 | --- | --- | --- |
-| `api` | `10001:10001` | read-only, tmpfs `/tmp` |
+| `api` | `10001:10001` | read-only, tmpfs `/tmp` (64 MB) |
 | `postgres` | `999:999` (image's `postgres`) | read-only, tmpfs `/tmp` (64 MB) and `/var/run/postgresql` (1 MB) |
 | `redis` | `999:1000` (image's `redis`) | read-only, tmpfs `/tmp` (64 MB) |
 | `seaweedfs` | `1000:1000` (image's `seaweed`) | writable, because Compose cannot place `configs.content` in a read-only container; tmpfs `/tmp` (64 MB, Unix sockets) |

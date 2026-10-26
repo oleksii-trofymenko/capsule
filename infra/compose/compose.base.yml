@@ -38,7 +38,7 @@ services:
     # Same uid as the Dockerfile's USER; stated here so check-privileges.sh can see it.
     user: "10001:10001"
     read_only: true
-    tmpfs: [/tmp]
+    tmpfs: [/tmp:size=64m]
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
     restart: unless-stopped
