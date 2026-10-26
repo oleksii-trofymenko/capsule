@@ -2,7 +2,7 @@
 
 > **Implementation copy.** The project owner keeps the working version of this blueprint as a private doc. This file is the English version for implementation, current as of 2026-10-26.
 >
-> **Precedence:** an accepted ADR in `docs/adr/` and the root `CLAUDE.md` win over this file. Known differences from the owner's version: the Orchestrator is the main Claude Code session, not a subagent; Go is optional and needs a benchmark plus an ADR before use. When the owner's version changes, update this file in its own commit (`docs(blueprint): …`).
+> **Precedence:** an accepted ADR in `docs/adr/` and the root `CLAUDE.md` win over this file. Known differences from the owner's version: the Orchestrator is the main Claude Code session, not a subagent; Go is optional and needs a benchmark plus an ADR before use; accepted ADRs changed some choices (2026-10-26) — Python 3.13 (ADR-005), SAQ worker (ADR-006), SeaweedFS instead of MinIO with media deleted within 24 h and never backed up (ADR-008), no cloud LLM fallback while the budget is €0 (ADR-010), CI service containers instead of Testcontainers (ADR-016). When the owner's version changes, update this file in its own commit (`docs(blueprint): …`).
 
 ## 1. The problem we solve
 
@@ -54,7 +54,7 @@ flowchart TB
   subgraph pc["Home PC 24/7 · RTX 5070 Ti 16 GB · Ryzen 9700X · 32 GB"]
     api["API · FastAPI<br/>auth, validation, limits"] --> pg[("PostgreSQL + pgvector<br/>data, memory, trends")]
     api --> redis[("Redis<br/>queue, cache, rate limit")]
-    api --> minio[("MinIO (S3)<br/>photo and audio with TTL")]
+    api --> seaweedfs[("SeaweedFS (S3 API)<br/>photo and audio, deleted within 24 h")]
     redis --> worker["Worker<br/>photo, audio, generation"]
     worker --> agent["Agent · LangGraph<br/>follow-ups, RAG, budget"]
     agent --> gw["LLM gateway · LiteLLM<br/>routing and fallback"]
@@ -79,11 +79,11 @@ The stack follows "boring, proven technology plus one flexible layer over the mo
 | Mobile: state and data | TanStack Query (server state + offline cache), Zustand (local state) | Caching, retry and sync out of the box | ADR-002 |
 | Mobile: storage | expo-secure-store (Keychain/Keystore) for tokens, SQLite/MMKV for cache | Tokens never in plain storage | ADR-003 |
 | Mobile: quality | Sentry (crashes + performance), PostHog (analytics, feature flags) | Crash-free rate, flags, staged rollout | ADR-004 |
-| API | Python 3.12+, FastAPI, Pydantic v2, OpenAPI 3.1 as the contract | Async, generated contract and mobile types | ADR-005 |
-| Background jobs | Redis + worker (arq or Celery) | Photo, audio and generation never block HTTP | ADR-006 |
+| API | Python 3.13, FastAPI, Pydantic v2, OpenAPI 3.1 as the contract | Async, generated contract and mobile types | ADR-005 |
+| Background jobs | Redis + SAQ worker | Photo, audio and generation never block HTTP | ADR-006 |
 | Database | PostgreSQL 16 + pgvector, Alembic migrations, SQLAlchemy 2 (async) | One database for data, memory and RAG; fewer moving parts | ADR-007 |
 | Cache and limits | Redis | Response cache, rate limiting, queue | ADR-006 |
-| File storage | MinIO (S3-compatible) with TTL deletion | Local = S3 in the cloud with no code change | ADR-008 |
+| File storage | SeaweedFS behind the S3 API; deletion within 24 h by our own job | Local = S3 in the cloud with no code change | ADR-008 |
 | Agent orchestration | LangGraph | Explicit state graph, checkpoints, nodes easy to test | ADR-009 |
 | LLM gateway | LiteLLM (OpenAI-compatible), routing config + fallback | Local → cloud by config change | ADR-010 |
 | Inference (local) | Ollama first → vLLM after a benchmark | Simplicity first, throughput later | ADR-011 |
@@ -91,7 +91,7 @@ The stack follows "boring, proven technology plus one flexible layer over the mo
 | Observability | OpenTelemetry → Grafana (Prometheus, Loki, Tempo), Langfuse for LLM traces, Sentry | Metrics, logs, traces and LLM quality in one place | ADR-013 |
 | Secure access | Cloudflare Tunnel (no open ports), JWT + refresh tokens | The home server is never exposed | ADR-014 |
 | Secrets | Local: SOPS or Docker secrets; cloud: Vault / Secret Manager | No secrets in Git | ADR-015 |
-| Tests | pytest, Hypothesis, Testcontainers; Jest + RNTL; Maestro (mobile E2E); k6 (load) | Unit → integration → E2E → load | ADR-016 |
+| Tests | pytest, Hypothesis, real Postgres/Redis as CI service containers; Jest + RNTL; Maestro (mobile E2E); k6 (load) | Unit → integration → E2E → load | ADR-016 |
 | Eval | Own eval runner + LLM-as-judge, run in CI | Guide quality as a number | ADR-017 |
 | Code quality | Ruff, mypy (strict), ESLint, Prettier, TypeScript strict, pre-commit, Conventional Commits | Standards enforced automatically | ADR-018 |
 | CI/CD | GitHub Actions, EAS Build/Update, GHCR for images | Automated from PR to release | ADR-019 |
@@ -398,7 +398,7 @@ Moving to the cloud means switching a Compose profile and the model config, not 
 
 | File | Contains | Used on |
 | --- | --- | --- |
-| `compose.base` | api, worker, postgres+pgvector, redis, minio | Always |
+| `compose.base` | api, worker, postgres+pgvector, redis, seaweedfs | Always |
 | `compose.local-gpu` | ollama/vllm with GPU access, faster-whisper | Home PC |
 | `compose.observability` | otel-collector, prometheus, loki, tempo, grafana, langfuse | Home PC, later cloud |
 | `compose.tunnel` | cloudflared | Home PC |
@@ -409,7 +409,7 @@ Moving to the cloud means switching a Compose profile and the model config, not 
 | Environment | Where | Models | Purpose |
 | --- | --- | --- | --- |
 | local-dev | Laptop | Stubs or a rate-limited cloud API | Mobile development, quick tests |
-| home-prod | PC, 24/7 | Local GPU + cloud fallback | MVP, real users, benchmarks |
+| home-prod | PC, 24/7 | Local GPU (cloud fallback off while the budget is €0, ADR-010) | MVP, real users, benchmarks |
 | cloud | VPS / Cloud Run / ECS + GPU provider or API | Provider APIs or rented GPU | Scaling |
 
 ### Migration plan (when the numbers say so)
@@ -423,7 +423,7 @@ Moving to the cloud means switching a Compose profile and the model config, not 
 ### Home server: operating rules
 
 - A UPS, and Docker starting automatically after a reboot.
-- Daily backup of Postgres and MinIO to an external disk or the cloud; restore tested monthly.
+- Daily backup of Postgres to an external disk; restore tested monthly. Media are never backed up (ADR-008).
 - OS and driver updates on a schedule, never during a demo.
 - Router ports closed; access only through the tunnel. Admin UIs (Grafana, Langfuse) only behind Cloudflare Access or Tailscale.
 
@@ -438,7 +438,7 @@ One epic = one chat with the Orchestrator. Each item below is one task, one bran
 - [ ] ADR-001…ADR-010 for the core stack
 - [ ] Pre-commit: Ruff, mypy, ESLint, Prettier, gitleaks
 - [ ] CI: lint + typecheck + (empty) tests green
-- [ ] `compose.base`: api (health), postgres, redis, minio
+- [ ] `compose.base`: api (health), postgres, redis, seaweedfs
 - [ ] Design: personas (men and women aged 20–60), key user flows, MVP wireframes
 - [ ] Design system: tokens (colour, type, spacing), base components, light and dark theme
 
@@ -483,7 +483,7 @@ One epic = one chat with the Orchestrator. Each item below is one task, one bran
 
 ### E6. Photo and voice
 
-- [ ] Media upload: on-device compression, validation, EXIF removal, TTL in MinIO
+- [ ] Media upload: on-device compression, validation, EXIF removal, deletion within 24 h (ADR-008)
 - [ ] Vision node: clothes, colours, style (no appearance rating)
 - [ ] Audio: recording in the app, faster-whisper in the worker
 - [ ] VRAM budget: which models run together, loading/unloading
