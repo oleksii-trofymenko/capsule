@@ -253,15 +253,9 @@ jobs:
           version: ${{ env.UV_VERSION }}
           enable-cache: true
           cache-dependency-glob: apps/api/uv.lock
-      # --locked fails without uv.lock. Until the first integration test lands,
-      # "no tests collected" (exit 5) is a warning.
+      # --locked fails without uv.lock; zero collected tests (exit 5) fails too.
       - if: steps.project.outputs.present == 'true'
-        run: |
-          set +e
-          uv run --directory apps/api --locked pytest -m integration
-          rc=$?
-          if [ "$rc" -eq 5 ]; then echo "::warning::0 integration tests collected."; exit 0; fi
-          exit "$rc"
+        run: uv run --directory apps/api --locked pytest -m integration
 
   audit-api:
     name: audit (api)
