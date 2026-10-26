@@ -151,6 +151,13 @@ jobs:
       - run: make lint
         env:
           SKIP: gitleaks
+      # Compose pins must equal the service images below and UV_VERSION (ADR-016); the Compose
+      # files must parse. test.env holds test-only values, so no secrets are needed.
+      - name: Compose pins and config
+        run: |
+          bash infra/compose/check-pins.sh
+          docker compose --env-file infra/compose/test.env -f infra/compose/compose.base.yml \
+            -f infra/compose/compose.test.yml config --quiet
 
   unit-api:
     name: unit (api)
