@@ -2,7 +2,7 @@
 
 > **Implementation copy.** The project owner keeps the working version of this blueprint as a private doc. This file is the English version for implementation, current as of 2026-10-26.
 >
-> **Precedence:** an accepted ADR in `docs/adr/` and the root `CLAUDE.md` win over this file. Known differences from the owner's version: the Orchestrator is the main Claude Code session, not a subagent; Go is optional and needs a benchmark plus an ADR before use; accepted ADRs changed some choices (2026-10-26) — Python 3.13 (ADR-005), SAQ worker (ADR-006), SeaweedFS instead of MinIO with media deleted within 24 h and never backed up (ADR-008), MMKV-only mobile cache with SQLite deferred (ADR-003), no cloud LLM fallback while the budget is €0 (ADR-010), CI service containers instead of Testcontainers (ADR-016). When the owner's version changes, update this file in its own commit (`docs(blueprint): …`).
+> **Precedence:** an accepted ADR in `docs/adr/` and the root `CLAUDE.md` win over this file. Known differences from the owner's version: the Orchestrator is the main Claude Code session, not a subagent; Go is optional and needs a benchmark plus an ADR before use; accepted ADRs and owner decisions changed some choices (2026-10-26) — Python 3.13 (ADR-005), SAQ worker (ADR-006), SeaweedFS instead of MinIO with media deleted within 24 h and never backed up (ADR-008), MMKV-only mobile cache with SQLite deferred (ADR-003), no cloud LLM fallback while the budget is €0 (ADR-010), CI service containers instead of Testcontainers (ADR-016); guest first — sign-up after the first guide, so activation and time to first guide are measured from onboarding (E0-08, `docs/metrics.md`). When the owner's version changes, update this file in its own commit (`docs(blueprint): …`).
 
 ## 1. The problem we solve
 
@@ -18,13 +18,14 @@ Every technical decision must move at least one of these metrics.
 
 | Metric | Meaning | MVP target | How we measure |
 | --- | --- | --- | --- |
-| Activation rate | New users who receive their first guide | > 60% | `guide_delivered` / `signup` |
-| Time to first guide | App open to first guide | < 90 s | Analytics events, p50/p95 |
+| Activation rate | New users who receive their first guide within 24 h of starting onboarding (guest first, no sign-up needed) | > 60% | First `guide_delivered` ÷ `onboarding_started` (see `docs/metrics.md`) |
+| Time to first guide | Start of onboarding (after the consent choice) to first guide | p95 < 90 s | `since_onboarding_ms`, p50/p95 |
 | Guide quality score | Eval score (LLM-as-judge + rules) | > 4.0 / 5 | Eval in CI |
 | Budget compliance | Guides whose outfit total ≤ budget | 100% | Checked by code, not by a model |
 | Helpful rate | Guides rated "helpful" | > 70% | 👍 / 👎 in the app |
 | D7 retention | Users back after 7 days | > 20% | Cohort analytics |
 | Click-through | Product opened from a guide | > 15% | `product_click` event |
+| Sign-up conversion | Guests who create an account within 7 days of their first guide | Baseline first; target after 4 weeks of beta | `signup_completed` ÷ first `guide_delivered` |
 
 **Out of MVP scope:** own marketplace, in-app payment, virtual try-on, web version.
 
@@ -203,7 +204,7 @@ The project owner is the Product Owner. The Orchestrator is the tech lead: it ow
 ### Design: an app for men and women aged 20–60
 
 - **Neutral base, personal accent.** Brand, colours and illustrations are gender-neutral; personalisation comes from user choice, not from "pink" and "blue" versions of the app.
-- **Onboarding without assumptions.** The user chooses which wardrobe to shop for (menswear, womenswear, unisex, no preference), style and sizes, and can change it at any time. Nothing is inferred about gender from a photo.
+- **Onboarding without assumptions.** The user chooses which wardrobe to shop for (menswear, womenswear or unisex, or "skip for now"), style and sizes, and can change it at any time. Nothing is inferred about gender from a photo.
 - **Content for both audiences.** Events, trends, example looks and eval scenarios cover menswear, womenswear and unisex equally.
 - **Ages 20–60 means accessibility.** Dynamic Type and font scaling, WCAG AA contrast, touch targets ≥ 44 pt / 48 dp, clear labels rather than icons alone, voice input as an equal option.
 - **Tone of the guide.** Confident, explains "why", never comments on bodies or appearance, no youth slang by default.
@@ -330,7 +331,7 @@ Every requirement has a numeric target and a way to check it. LLM generation has
 | Traffic | Photos compressed to ≤ 1 MB before upload | Test + size log in the API |
 | Offline | Guide history available offline; queued messages sent on reconnect | Maestro flow with the network off |
 | Security | Tokens in Keychain/Keystore; certificate pinning for the API; obfuscation (Hermes bytecode + R8); zero secrets in the bundle | Security checklist, bundle scan |
-| Stability | Crash-free sessions > 99.5% | Sentry Release Health |
+| Stability | Crash-free sessions > 99.5% (users who allowed crash reports) | Sentry Release Health |
 | Guidelines | Native navigation, back gestures, system fonts, dark theme | Manual HIG / Material checklist before release |
 | Store requirements | Privacy manifest (iOS), Data safety (Google Play), permission explanations, in-app account deletion | Checklist before submission |
 | Updates | Forced update by minimum version; feature flags; staged rollout 10% → 50% → 100% | API config + PostHog flags + EAS Update |
@@ -378,7 +379,7 @@ Goal: the project owner opens one dashboard and explains in two minutes, with nu
 ### How the project owner tests personally
 
 1. **From scratch:** one command brings up the whole stack; `/ready` returns OK.
-2. **Smoke flow on the phone:** sign up → "date night look, €100" → follow-up → photo → guide. Find the request in Langfuse and see each agent step with time and tokens.
+2. **Smoke flow on the phone:** as a guest, "date night look, €100" → follow-up → photo → guide → save (sign up). Find the request in Langfuse and see each agent step with time and tokens.
 3. **Eval:** one command runs 50–100 scenarios and reports mean score, budget compliance and the 5 worst answers.
 4. **Load:** k6 at 10 / 25 / 50 virtual users; see where p95 breaks and what saturates (GPU, queue, database).
 5. **Chaos:** stop Ollama — the app answers "try again later" (cloud fallback is off while the budget is €0, ADR-010); stop Redis — the API returns a clear error instead of crashing.
