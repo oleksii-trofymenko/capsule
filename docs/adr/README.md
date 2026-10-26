@@ -26,3 +26,4 @@ One file per decision: `docs/adr/NNN-short-title.md`, from `000-template.md`. Ac
 | [018](018-code-quality-pre-commit.md) | Code quality: Ruff, mypy strict, ESLint, Prettier, pre-commit, Conventional Commits | accepted | E0-04 |
 | [019](019-ci-cd-github-actions.md) | CI/CD: GitHub Actions with one required gate check (`ci-ok`); GHCR and EAS for delivery | accepted | E0-05 |
 | [020](020-api-test-tooling.md) | API test tooling: httpx, PyYAML and jsonschema as dev-only dependencies | accepted | E0-06 |
+| [021](021-asgi-server-uvicorn.md) | uvicorn (no extras) as the ASGI server for the API | proposed | E0-07 |
