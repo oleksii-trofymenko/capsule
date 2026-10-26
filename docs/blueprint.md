@@ -331,7 +331,7 @@ Every requirement has a numeric target and a way to check it. LLM generation has
 | Traffic | Photos compressed to ≤ 1 MB before upload | Test + size log in the API |
 | Offline | Guide history available offline; queued messages sent on reconnect | Maestro flow with the network off |
 | Security | Tokens in Keychain/Keystore; certificate pinning for the API; obfuscation (Hermes bytecode + R8); zero secrets in the bundle | Security checklist, bundle scan |
-| Stability | Crash-free sessions > 99.5% | Sentry Release Health |
+| Stability | Crash-free sessions > 99.5% (users who allowed crash reports) | Sentry Release Health |
 | Guidelines | Native navigation, back gestures, system fonts, dark theme | Manual HIG / Material checklist before release |
 | Store requirements | Privacy manifest (iOS), Data safety (Google Play), permission explanations, in-app account deletion | Checklist before submission |
 | Updates | Forced update by minimum version; feature flags; staged rollout 10% → 50% → 100% | API config + PostHog flags + EAS Update |
@@ -379,7 +379,7 @@ Goal: the project owner opens one dashboard and explains in two minutes, with nu
 ### How the project owner tests personally
 
 1. **From scratch:** one command brings up the whole stack; `/ready` returns OK.
-2. **Smoke flow on the phone:** sign up → "date night look, €100" → follow-up → photo → guide. Find the request in Langfuse and see each agent step with time and tokens.
+2. **Smoke flow on the phone:** as a guest, "date night look, €100" → follow-up → photo → guide → save (sign up). Find the request in Langfuse and see each agent step with time and tokens.
 3. **Eval:** one command runs 50–100 scenarios and reports mean score, budget compliance and the 5 worst answers.
 4. **Load:** k6 at 10 / 25 / 50 virtual users; see where p95 breaks and what saturates (GPU, queue, database).
 5. **Chaos:** stop Ollama — the app answers "try again later" (cloud fallback is off while the budget is €0, ADR-010); stop Redis — the API returns a clear error instead of crashing.
