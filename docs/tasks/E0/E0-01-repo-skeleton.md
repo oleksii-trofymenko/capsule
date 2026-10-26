@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | review |
+| Status | done |
 | Owner | You (Product Owner) |
 | Reviewers | code-reviewer |
 | Estimate | S |
@@ -24,7 +24,7 @@ Agents need a fixed map of the repository so every card can name its allowed fil
 - [x] `.editorconfig` (UTF-8, LF, 2 spaces for TS/YAML/JSON/MD, 4 for Python).
 - [x] `git init` with default branch `main`; first commit `chore: repository skeleton`. *(Landed as `chore: initial repo skeleton`; see Notes.)*
 - [x] Private GitHub repository created, added as `origin`, `main` pushed. Branches, PRs and squash-merges (root `CLAUDE.md`, Orchestrator steps 3–6) depend on this; branch protection comes in E0-05. *(Done as a public repo, and protection moved here; see Notes.)*
-- [ ] GitHub connected to claude.ai so cloud sessions can open the repository.
+- [x] GitHub connected to claude.ai so cloud sessions can open the repository.
 
 ## Allowed files
 
@@ -48,4 +48,4 @@ Agents need a fixed map of the repository so every card can name its allowed fil
   - `.gitattributes` (`* text=auto eol=lf`, images and PDFs binary) added in PR #1 so scripts and Dockerfiles stay LF on Windows checkouts.
   - GitHub CLI installed on the home PC and logged in, so the Orchestrator can open PRs.
 - Numbers: time to first run not measurable yet (no runnable stack until E0-07).
-- Left for later: confirm GitHub is connected to claude.ai (owner action, not yet verified).
+- Left for later: none. GitHub connected to claude.ai on 2026-10-26: Claude GitHub App given access to `capsule` (owner-confirmed). Its pending permission update (Actions/Checks/Webhooks write) was left unaccepted until cloud PR/CI features are needed.
