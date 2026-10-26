@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | in progress |
+| Status | review |
 | Owner | You (Product Owner) |
 | Reviewers | code-reviewer |
 | Estimate | S |
@@ -17,13 +17,13 @@ Agents need a fixed map of the repository so every card can name its allowed fil
 
 ## Acceptance criteria
 
-- [ ] Folder tree as in `docs/blueprint.md` §5: `apps/mobile`, `apps/api`, `contracts`, `ml`, `infra`, `docs`, `.claude`, `.github`. Empty folders (including `contracts/`) keep a `.gitkeep`.
-- [ ] The agent harness files from E0-02 are in place, including `docs/blueprint.md`.
-- [ ] `README.md`: one-paragraph product description, prerequisites (Docker, Node LTS, Python 3.12, uv or pip, Expo CLI), quick start marked "coming in E0-07", links to `CLAUDE.md`, `docs/tasks/README.md`, `docs/adr/README.md`.
-- [ ] `.gitignore` for Python, Node, Expo, `.env*` (except `.env.example`), OS files.
-- [ ] `.editorconfig` (UTF-8, LF, 2 spaces for TS/YAML/JSON/MD, 4 for Python).
-- [ ] `git init` with default branch `main`; first commit `chore: repository skeleton`.
-- [ ] Private GitHub repository created, added as `origin`, `main` pushed. Branches, PRs and squash-merges (root `CLAUDE.md`, Orchestrator steps 3–6) depend on this; branch protection comes in E0-05.
+- [x] Folder tree as in `docs/blueprint.md` §5: `apps/mobile`, `apps/api`, `contracts`, `ml`, `infra`, `docs`, `.claude`, `.github`. Empty folders (including `contracts/`) keep a `.gitkeep`.
+- [x] The agent harness files from E0-02 are in place, including `docs/blueprint.md`.
+- [x] `README.md`: one-paragraph product description, prerequisites (Docker, Node LTS, Python 3.12, uv or pip, Expo CLI), quick start marked "coming in E0-07", links to `CLAUDE.md`, `docs/tasks/README.md`, `docs/adr/README.md`.
+- [x] `.gitignore` for Python, Node, Expo, `.env*` (except `.env.example`), OS files.
+- [x] `.editorconfig` (UTF-8, LF, 2 spaces for TS/YAML/JSON/MD, 4 for Python).
+- [x] `git init` with default branch `main`; first commit `chore: repository skeleton`.
+- [x] Private GitHub repository created, added as `origin`, `main` pushed. Branches, PRs and squash-merges (root `CLAUDE.md`, Orchestrator steps 3–6) depend on this; branch protection comes in E0-05.
 - [ ] GitHub connected to claude.ai so cloud sessions can open the repository.
 
 ## Allowed files
@@ -40,7 +40,12 @@ Agents need a fixed map of the repository so every card can name its allowed fil
 
 ## Notes (filled while working)
 
-- Plan approved:
+- Plan approved: 2026-10-26, in the Orchestrator session.
 - Decisions:
-- Numbers:
-- Left for later:
+  - Repository is **public**, not private: on a free GitHub account branch rules are enforced only on public repos. The pushed history was scanned for secrets and personal data first; the three local reference files (Blueprint PDF, the Ukrainian "how to work with Claude" PDF, the Chat & Guide HTML) are gitignored.
+  - Branch protection moved forward from E0-05: ruleset `main` is active (PR required, 0 approvals, linear history, no force pushes, no deletions, empty bypass list); repo allows squash merge only and deletes head branches on merge. E0-05 still adds required status checks.
+  - First commit landed as `chore: initial repo skeleton` instead of `chore: repository skeleton`; `main` cannot be rewritten, accepted as is.
+  - `.gitattributes` (`* text=auto eol=lf`, images and PDFs binary) added in PR #1 so scripts and Dockerfiles stay LF on Windows checkouts.
+  - GitHub CLI installed on the home PC and logged in, so the Orchestrator can open PRs.
+- Numbers: time to first run not measurable yet (no runnable stack until E0-07).
+- Left for later: confirm GitHub is connected to claude.ai (owner action, not yet verified).
