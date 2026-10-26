@@ -7,4 +7,4 @@ hooks: ## Install the pre-commit and commit-msg hooks
 	pre-commit install
 
 lint: ## Run every hook on all files, plus secret scans of unstaged changes and history
-	pre-commit run --all-files --hook-stage manual
+	pre-commit run --all-files --hook-stage manual --show-diff-on-failure

@@ -1,0 +1,307 @@
+# CI (ADR-019, tests per ADR-016). The only required check is `ci-ok`.
+# Area jobs are skipped when their files did not change; `ci-ok` always runs and passes only
+# when every job succeeded or was skipped, so a skipped job never leaves the PR "waiting".
+# Actions are pinned to commit SHAs. Bumps follow ADR-018: own PR, release >= 7 days old,
+# release notes linked, security-engineer review.
+name: CI
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited] # `edited`: re-check a renamed PR title
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  UV_VERSION: "0.13.1"
+  PRE_COMMIT_VERSION: "4.7.0"
+  PIP_AUDIT_VERSION: "2.10.1"
+  NODE_VERSION: "24"
+
+jobs:
+  changes:
+    name: changes
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      api: ${{ steps.diff.outputs.api }}
+      mobile: ${{ steps.diff.outputs.mobile }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2 # the PR merge commit and its base parent
+          persist-credentials: false
+      - id: diff
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          # Shared files (workflows, Makefile, hook config, contract) count for every area.
+          shared='^(\.github/workflows/|Makefile$|\.pre-commit-config\.yaml$|contracts/)'
+          if [ "$EVENT" != "pull_request" ]; then
+            echo "Push to main: full run."
+            { echo "api=true"; echo "mobile=true"; } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          files=$(git diff --name-only HEAD^1 HEAD)
+          printf 'Changed files:\n%s\n' "$files"
+          match() { grep -qE "$1|$shared" <<< "$files" && echo true || echo false; }
+          echo "api=$(match '^(apps/api/|pyproject\.toml$|\.python-version$)')" >> "$GITHUB_OUTPUT"
+          echo "mobile=$(match '^apps/mobile/')" >> "$GITHUB_OUTPUT"
+          cat "$GITHUB_OUTPUT"
+
+  pr-title:
+    name: pr-title
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    steps:
+      # The squash commit on main takes the PR title, which local commit-msg hooks never see.
+      # Same rule as conventional-pre-commit --force-scope (ADR-018).
+      - env:
+          TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          re='^(build|chore|ci|docs|feat|fix|perf|refactor|revert|style|test)\([a-z0-9-]+\)!?: [^ ].*$'
+          if [[ "$TITLE" =~ $re ]]; then
+            echo "PR title OK: $TITLE"
+          else
+            echo "::error::PR title must be a Conventional Commit with a scope, e.g. 'ci(repo): add CI workflow'. Got: $TITLE"
+            exit 1
+          fi
+
+  secrets:
+    name: secrets
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # full history
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          version: ${{ env.UV_VERSION }}
+      - name: Install pre-commit
+        run: |
+          uv tool install "pre-commit==$PRE_COMMIT_VERSION" --python 3.13
+          uv tool dir --bin >> "$GITHUB_PATH"
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-secrets-${{ runner.os }}-${{ hashFiles('.pre-commit-config.yaml') }}
+      # Same pinned gitleaks as the local hook; scans every commit reachable from HEAD.
+      - run: pre-commit run gitleaks-history --all-files --hook-stage manual
+
+  lint:
+    name: lint (all hooks)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          version: ${{ env.UV_VERSION }}
+      - name: Install pre-commit
+        run: |
+          uv tool install "pre-commit==$PRE_COMMIT_VERSION" --python 3.13
+          uv tool dir --bin >> "$GITHUB_PATH"
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-lint-${{ runner.os }}-${{ hashFiles('.pre-commit-config.yaml') }}
+      # Mobile hooks (Prettier, ESLint, tsc) run from apps/mobile/node_modules.
+      - if: hashFiles('apps/mobile/package-lock.json') != ''
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: apps/mobile/package-lock.json
+      - if: hashFiles('apps/mobile/package-lock.json') != ''
+        run: npm ci --prefix apps/mobile
+      # Lint + typecheck (Ruff, mypy, Prettier, ESLint, tsc). Secrets run in their own job.
+      - run: make lint
+        env:
+          SKIP: gitleaks
+
+  unit-api:
+    name: unit (api)
+    needs: [changes, lint]
+    if: needs.changes.outputs.api == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: project
+        run: |
+          if [ -f apps/api/pyproject.toml ]; then echo "present=true" >> "$GITHUB_OUTPUT"
+          else echo "present=false" >> "$GITHUB_OUTPUT"; echo "::notice::No apps/api project yet (E0-06); nothing to test."; fi
+      - if: steps.project.outputs.present == 'true'
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+          cache-dependency-glob: apps/api/uv.lock
+      # Zero collected tests (exit 5) fails: once the project exists, it has tests.
+      - if: steps.project.outputs.present == 'true'
+        run: uv run --directory apps/api --locked pytest -m "not integration"
+
+  unit-mobile:
+    name: unit (mobile)
+    needs: [changes, lint]
+    if: needs.changes.outputs.mobile == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: project
+        run: |
+          if [ -f apps/mobile/package-lock.json ]; then echo "present=true" >> "$GITHUB_OUTPUT"
+          else echo "present=false" >> "$GITHUB_OUTPUT"; echo "::notice::No apps/mobile package yet; nothing to test."; fi
+      - if: steps.project.outputs.present == 'true'
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: apps/mobile/package-lock.json
+      - if: steps.project.outputs.present == 'true'
+        run: |
+          npm ci --prefix apps/mobile
+          npm --prefix apps/mobile test -- --ci
+
+  integration:
+    name: integration (api)
+    needs: [changes, lint]
+    if: needs.changes.outputs.api == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    services:
+      # Throwaway CI-only credentials; the containers exist for this job only.
+      postgres:
+        image: pgvector/pgvector:0.8.7-pg16@sha256:7b822b0aac60967beb1ea5e576b8602c94c300a157d187f385ae3e0da199b90a
+        env:
+          POSTGRES_USER: capsule
+          POSTGRES_PASSWORD: capsule
+          POSTGRES_DB: capsule_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U capsule -d capsule_test"
+          --health-interval 2s --health-timeout 5s --health-retries 30
+      redis:
+        image: redis:8.10.2-alpine@sha256:9f8d2d789b9a1d1e3f283f979aa9cbf393373806472e1ccd460e2f9c869b833b
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 2s --health-timeout 5s --health-retries 30
+    env:
+      DATABASE_URL: postgresql://capsule:capsule@localhost:5432/capsule_test
+      REDIS_URL: redis://localhost:6379/0
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Check service wiring (pgvector, Redis, host ports)
+        env:
+          PG: ${{ job.services.postgres.id }}
+          REDIS: ${{ job.services.redis.id }}
+        run: |
+          docker exec "$PG" psql -U capsule -d capsule_test -v ON_ERROR_STOP=1 -tAc \
+            "CREATE EXTENSION IF NOT EXISTS vector; SELECT 'pgvector ' || extversion FROM pg_extension WHERE extname = 'vector';"
+          test "$(docker exec "$REDIS" redis-cli ping)" = "PONG" && echo "redis PONG"
+          timeout 5 bash -c '</dev/tcp/127.0.0.1/5432' && echo "localhost:5432 open"
+          timeout 5 bash -c '</dev/tcp/127.0.0.1/6379' && echo "localhost:6379 open"
+      - id: project
+        run: |
+          if [ -f apps/api/pyproject.toml ]; then echo "present=true" >> "$GITHUB_OUTPUT"
+          else echo "present=false" >> "$GITHUB_OUTPUT"; echo "::notice::No apps/api project yet (E0-06); services checked, no tests to run."; fi
+      - if: steps.project.outputs.present == 'true'
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+          cache-dependency-glob: apps/api/uv.lock
+      # Until the first integration test lands, "no tests collected" (exit 5) is a warning.
+      - if: steps.project.outputs.present == 'true'
+        run: |
+          set +e
+          uv run --directory apps/api --locked pytest -m integration
+          rc=$?
+          if [ "$rc" -eq 5 ]; then echo "::warning::0 integration tests collected."; exit 0; fi
+          exit "$rc"
+
+  audit-api:
+    name: audit (api)
+    needs: changes
+    if: needs.changes.outputs.api == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: project
+        run: |
+          if [ -f apps/api/uv.lock ]; then echo "present=true" >> "$GITHUB_OUTPUT"
+          else echo "present=false" >> "$GITHUB_OUTPUT"; echo "::notice::No apps/api/uv.lock yet; nothing to audit."; fi
+      - if: steps.project.outputs.present == 'true'
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          version: ${{ env.UV_VERSION }}
+      # pip-audit fails on ANY known vulnerability (no severity filter; ADR-019).
+      # Exceptions: add `--ignore-vuln <ID>` here with a comment giving the reason and a review date.
+      - if: steps.project.outputs.present == 'true'
+        run: |
+          uv export --directory apps/api --locked --no-emit-project --format requirements-txt \
+            --output-file "$RUNNER_TEMP/requirements.txt"
+          uvx --python 3.13 "pip-audit==$PIP_AUDIT_VERSION" --strict --disable-pip \
+            --requirement "$RUNNER_TEMP/requirements.txt"
+
+  audit-mobile:
+    name: audit (mobile)
+    needs: changes
+    if: needs.changes.outputs.mobile == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: project
+        run: |
+          if [ -f apps/mobile/package-lock.json ]; then echo "present=true" >> "$GITHUB_OUTPUT"
+          else echo "present=false" >> "$GITHUB_OUTPUT"; echo "::notice::No apps/mobile/package-lock.json yet; nothing to audit."; fi
+      - if: steps.project.outputs.present == 'true'
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      # High and critical advisories fail the build (reads the lockfile; no install).
+      - if: steps.project.outputs.present == 'true'
+        run: npm audit --prefix apps/mobile --audit-level=high
+
+  ci-ok:
+    name: ci-ok
+    if: always()
+    needs: [changes, pr-title, secrets, lint, unit-api, unit-mobile, integration, audit-api, audit-mobile]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    steps:
+      - env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          echo "$NEEDS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
+          echo "$NEEDS" | jq -e 'all(.[]; .result == "success" or .result == "skipped")' > /dev/null \
+            || { echo "::error::A required job failed or was cancelled."; exit 1; }
