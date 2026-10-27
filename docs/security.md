@@ -34,7 +34,9 @@ Owner decisions (2026-10-27):
 | Consultation data | Postgres, from E3 (flows.md "Guest data": requests, voice transcripts, garments found in photos, follow-up answers, guides, wardrobe/style/sizes choices) | Personal data. A wardrobe and sizes profile |
 | Media (photos, voice) | SeaweedFS bucket, from E6 (ADR-008) | Highest sensitivity. May show faces, homes, bodies |
 | Rate-limit keys | Redis | Built from client IP and email, so they are personal data |
-| Secrets | `.env` on the host (written by `make up`): `POSTGRES_PASSWORD`, `REDIS_PASSWORD`, `SEAWEEDFS_S3_ACCESS_KEY`/`SECRET_KEY`, `SEAWEEDFS_JWT_SIGNING_KEY`, `SEAWEEDFS_JWT_FILER_SIGNING_KEY`, JWT signing keys from E1-05 | Any one of them opens a data store or lets someone forge sessions |
+| Secrets | `.env` on the host (written by `make up`): `POSTGRES_PASSWORD`, `REDIS_PASSWORD`, `SEAWEEDFS_JWT_SIGNING_KEY`, `SEAWEEDFS_JWT_FILER_SIGNING_KEY`, JWT signing keys from E1-05 | Any one of them opens a data store or lets someone forge sessions |
+| S3 access key ID (identifier; ADR-024) | `.env` (`SEAWEEDFS_S3_ACCESS_KEY`); sent in clear in every SigV4 request and presigned URL; one SeaweedFS startup log line | Useless without the secret key. Never reused as secret material |
+| S3 secret key (secret) | `.env` (`SEAWEEDFS_S3_SECRET_KEY`) | Signs any S3 request: full access to media |
 
 ## 3. Trust boundaries and data flow
 
