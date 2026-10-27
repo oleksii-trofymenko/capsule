@@ -24,6 +24,7 @@ Access tokens live 10 minutes, so the app needs to renew them without asking the
 - [ ] R6 (server side): a retry after a lost refresh response follows the ADR-014 grace rule (single use, 30 s, successor still `current`; the successor becomes `superseded` before the new token is inserted). Tested inside and just outside the window, a second grace attempt, and a superseded successor coming back.
 - [ ] Two concurrent refreshes with the same token, on two real connections: both get 200, exactly one token is `current` and grace is used. A third concurrent one revokes the family.
 - [ ] The refresh transaction sets `lock_timeout = '2s'` with `SET LOCAL`. SQLSTATE 55P03 rolls everything back and returns a 503 problem with `Retry-After: 1`; a retry with the same token still works.
+- [ ] A guest family whose principal's `last_activity_at` is older than the configured guest retention gets the same 401 as an unknown token, with the same predicate as `find_active_guest` (E1-05 security review L3: the 30-day refresh idle limit is independent of `GUEST_RETENTION_DAYS`, so without this a guest past retention could refresh and be revived).
 - [ ] `last_activity_at` is touched after a 2xx refresh only (ADR-022), with the hourly cap. A failed refresh does not touch it.
 - [ ] A4: rotated, superseded and new tokens are stored as hashes only. A test reads the table.
 - [ ] A15: grace used, reuse detected and family revoked (with reason) are logged under the principal id, with no token, hash or IP.

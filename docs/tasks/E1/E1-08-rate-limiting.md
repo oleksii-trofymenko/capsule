@@ -19,6 +19,7 @@ The API becomes reachable from the internet through the tunnel. Without limits, 
 
 - [ ] Redis-backed limits:
   - [ ] Per client IP on guest-credential issue, sign-up and sign-in.
+  - [ ] Both branches of `POST /v1/auth/guest` (create, and sign-in with a credential, which makes a new refresh family each time) are limited per client, plus a global ceiling on guest creation, so a script cannot fill Postgres before the E1-10 purge (E1-05 security review L2).
   - [ ] A global limit across all clients on sign-in plus sign-up, on top of the per-IP limit, so that requests spread across many IPs cannot keep the password hasher saturated (A1, A2). Default and reason in the card notes. Refresh and guest-credential endpoints never count against this global budget. Accepted remainder: while an attack fills the bucket, real users cannot sign in or sign up (CPU is protected, availability of sign-in is not); record it under R10 in `docs/security.md` when this card lands.
   - [ ] Per-IP keys group IPv6 clients by their /64 prefix and IPv4 clients by the full address, so one host cannot dodge the limit by rotating addresses inside its /64. Tested with two addresses in the same /64.
   - [ ] Per principal (guest or account) on authenticated endpoints.
