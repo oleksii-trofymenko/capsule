@@ -41,8 +41,12 @@ def exception_chain(exc: BaseException) -> Iterator[BaseException]:
         stack.extend(e for e in links if isinstance(e, BaseException))
 
 
+def is_db_error(exc: BaseException) -> bool:
+    return isinstance(exc, SQLAlchemyError | psycopg.Error)
+
+
 def involves_db_error(exc: BaseException) -> bool:
-    return any(isinstance(e, SQLAlchemyError | psycopg.Error) for e in exception_chain(exc))
+    return any(is_db_error(e) for e in exception_chain(exc))
 
 
 def describe_chain(exc: BaseException) -> str:

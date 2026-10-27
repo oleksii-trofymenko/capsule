@@ -3,15 +3,19 @@
 Only `extra=` keys are allow-listed. `msg` and `exc` are free text, so callers must keep personal
 data out of messages and exception text. Database errors are the exception that is caught here
 (ADR-022): in `exc_info`, as the message, as a log argument or as an `extra=` value, a database
-error (or any exception chained to one, also inside lists, tuples, sets and dicts) is replaced
-by its type, SQLSTATE and constraint name; a traceback keeps only frame locations. Messages that
-a library built from such an error (asyncio's "Task exception was never retrieved") have every
-`str()` and `repr()` of it replaced, and keep only their first line. Text a caller formats
-itself before logging (an f-string with a truncated or reworded error) is not caught.
+error (or any exception chained to one, also inside list, tuple, set and dict keys and values,
+and in a finished asyncio Future or Task) is replaced by its type, SQLSTATE and constraint name;
+a traceback keeps only frame locations. Values without one pass through unchanged. In the final
+message, every `str()` and `repr()` of those database errors is replaced too (asyncio's "Task
+exception was never retrieved"), and with a database `exc_info` only the first line is kept.
+Not caught: text a caller formats itself (an f-string with a truncated or reworded error), and
+other objects that embed an exception in their own `repr`.
 """
 
+import asyncio
 import json
 import logging
+import re
 import sys
 from collections.abc import Iterator, Mapping
 from contextvars import ContextVar
@@ -24,6 +28,7 @@ from core.db_errors import (
     describe_db_error,
     exception_chain,
     involves_db_error,
+    is_db_error,
 )
 
 request_id_var: ContextVar[str | None] = ContextVar("request_id", default=None)
@@ -42,43 +47,81 @@ SERVER_LOGGERS = ("uvicorn", "uvicorn.error")
 SERVER_ACCESS_LOGGER = "uvicorn.access"
 
 
-# Containers in log arguments are searched this deep; anything deeper is printed as its type.
-_MAX_DEPTH = 4
+# Containers in log arguments are searched this deep. A value with containers nested deeper is
+# rebuilt as if it held a database error, and the deepest level prints as its type.
+_MAX_DEPTH = 8
+_CONTAINERS = (list, tuple, set, frozenset, dict)
 
 
-def _safe(value: object, depth: int = 0) -> object:
+def _held(value: object) -> BaseException | None:
+    """The exception a value is or carries: a done, not-cancelled Future or Task holds one."""
     if isinstance(value, BaseException):
-        return describe_chain(value) if involves_db_error(value) else value
-    if not isinstance(value, list | tuple | set | frozenset | dict):
         return value
-    if depth >= _MAX_DEPTH:
-        return f"<{type(value).__name__}>"
+    if isinstance(value, asyncio.Future) and value.done() and not value.cancelled():
+        return value.exception()
+    return None
+
+
+def _items(value: object) -> list[object]:
     if isinstance(value, dict):
-        return {key: _safe(item, depth + 1) for key, item in value.items()}
-    items = [_safe(item, depth + 1) for item in value]
-    return items if isinstance(value, list) else tuple(items)
+        return [*value.keys(), *value.values()]
+    return list(value) if isinstance(value, _CONTAINERS) else []
 
 
 def _exceptions(value: object, depth: int = 0) -> Iterator[BaseException]:
-    """Exceptions in a log argument, searched like `_safe` does."""
-    if isinstance(value, BaseException):
-        yield value
-    elif depth < _MAX_DEPTH and isinstance(value, list | tuple | set | frozenset | dict):
-        for item in value.values() if isinstance(value, dict) else value:
+    held = _held(value)
+    if held is not None:
+        yield held
+    elif depth < _MAX_DEPTH:
+        for item in _items(value):
             yield from _exceptions(item, depth + 1)
 
 
-def _db_errors(record: logging.LogRecord) -> list[BaseException]:
-    """Every exception chained to a database error in `exc_info`, the message or an argument."""
+def _needs_rebuild(value: object, depth: int) -> bool:
+    """True if the value holds a database error, or nests containers past the search depth."""
+    held = _held(value)
+    if held is not None:
+        return involves_db_error(held)
+    if not isinstance(value, _CONTAINERS):
+        return False
+    if depth >= _MAX_DEPTH:
+        return True
+    return any(_needs_rebuild(item, depth + 1) for item in _items(value))
+
+
+def _safe(value: object, depth: int = 0) -> object:
+    """The value itself unless it holds a database error; then a copy with each described."""
+    if not _needs_rebuild(value, depth):
+        return value
+    if isinstance(value, BaseException):
+        return describe_chain(value)
+    if not isinstance(value, _CONTAINERS):
+        return value  # a Future: its repr quotes the error, which _message replaces
+    if depth >= _MAX_DEPTH:
+        return f"<{type(value).__name__}>"
+    if isinstance(value, dict):
+        return {_safe(k, depth + 1): _safe(v, depth + 1) for k, v in value.items()}
+    items = [_safe(item, depth + 1) for item in value]
+    return items if isinstance(value, list) else type(value)(items)
+
+
+def _db_texts(record: logging.LogRecord) -> dict[str, str]:
+    """`str()` and `repr()` of every database error (and its driver error) the record carries,
+    mapped to the description that replaces it."""
     roots = [record.msg, record.args]
     if record.exc_info and record.exc_info[1] is not None:
         roots.append(record.exc_info[1])
-    found: list[BaseException] = []
-    for root in roots:
-        for exc in _exceptions(root):
-            if involves_db_error(exc):
-                found.extend(exception_chain(exc))
-    return found
+    texts: dict[str, str] = {}
+    for found in (exc for root in roots for exc in _exceptions(root)):
+        for error in exception_chain(found):
+            if not is_db_error(error):
+                continue
+            for e in (error, getattr(error, "orig", None)):
+                if isinstance(e, BaseException):
+                    for text in (repr(e), str(e)):
+                        if text:
+                            texts.setdefault(text, describe_db_error(e))
+    return texts
 
 
 def _message(record: logging.LogRecord) -> str:
@@ -86,13 +129,14 @@ def _message(record: logging.LogRecord) -> str:
     msg = str(_safe(record.msg))
     args = record.args
     if isinstance(args, Mapping):
-        msg = msg % {key: _safe(value, 1) for key, value in args.items()}
+        msg = msg % _safe(dict(args))  # keys too: `log.error("%s", {exc: 1})` lands here
     elif args:
         msg = msg % tuple(_safe(value, 1) for value in args)
-    for error in _db_errors(record):
-        for text in (repr(error), str(error)):
-            if text:
-                msg = msg.replace(text, describe_db_error(error))
+    texts = _db_texts(record)
+    if texts:
+        # One pass, longest first, so inserted descriptions are never matched again.
+        pattern = "|".join(map(re.escape, sorted(texts, key=len, reverse=True)))
+        msg = re.sub(pattern, lambda match: texts[match.group(0)], msg)
     exc = record.exc_info[1] if record.exc_info else None
     if exc is not None and involves_db_error(exc):
         # A library may have quoted the error in a form not matched above; DETAIL and the
@@ -130,12 +174,14 @@ class JsonHandler(logging.StreamHandler[TextIO]):
         which may hold the very values the formatter keeps out; this line names only where."""
         error = sys.exc_info()[1]
         line = {
+            "ts": datetime.fromtimestamp(record.created, UTC).isoformat(timespec="milliseconds"),
             "level": "ERROR",
             "logger": "capsule.logging",
             "msg": "log record could not be formatted",
             "source_logger": record.name,
             "where": f"{record.pathname}:{record.lineno}",
             "error": type(error).__name__ if error is not None else None,
+            "request_id": request_id_var.get(),
         }
         try:
             self.stream.write(json.dumps(line) + "\n")

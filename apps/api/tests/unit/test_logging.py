@@ -1,5 +1,6 @@
 import asyncio
 import gc
+import inspect
 import io
 import json
 import logging
@@ -148,8 +149,12 @@ GROUP = _raised(ExceptionGroup("g", [_integrity_error()]))
         ("failed", None, _raised(psycopg.errors.UniqueViolation(PII)), "exc", "UniqueViolation"),
         ("failed: %s", ([_integrity_error()],), None, "msg", f"failed: ['{IE}']"),
         ("failed: %s", ({"k": (_integrity_error(),)},), None, "msg", f"failed: {{'k': ('{IE}',)}}"),
+        ("failed: %s", ({_integrity_error(): 1},), None, "msg", f"failed: {{'{IE}': 1}}"),
     ],
-    ids=["exc_info", "arg", "mapping-arg", "msg", "chained", "group", "driver", "list", "nested"],
+    ids=[
+        "exc_info", "arg", "mapping-arg", "msg", "chained", "group", "driver",
+        "list", "nested", "key",
+    ],
 )  # fmt: skip
 def test_database_errors_are_described_never_printed(
     msg: object,
@@ -171,13 +176,62 @@ def test_database_errors_are_described_never_printed(
 
 def test_database_error_in_an_allowed_extra_is_described() -> None:
     deep: list[object] = [_integrity_error()]
+    expected: list[object] = ["<list>"]
     for _ in range(10):
         deep = [deep]
+    for _ in range(6):  # the dict is depth 0; the list at depth 8 prints as its type
+        expected = [expected]
     line = JsonFormatter().format(_record(error={"e": _integrity_error(), "deep": deep}))
 
-    # The dict is depth 0; a container at depth 4 prints as its type.
-    assert json.loads(line)["error"] == {"e": IE, "deep": [[["<list>"]]]}
+    assert json.loads(line)["error"] == {"e": IE, "deep": expected}
     assert PII not in line
+
+
+def test_values_without_a_database_error_pass_through_unchanged() -> None:
+    args = ({1, 2}, [[[[["deep"]]]]], frozenset({"a"}), {"k": ("v",)})
+    record = _record(error={"nested": [{3}]})
+    record.msg, record.args = "cfg %s %s %s %s", args
+
+    payload = json.loads(JsonFormatter().format(record))
+
+    assert payload["msg"] == logging.makeLogRecord({"msg": record.msg, "args": args}).getMessage()
+    assert payload["error"] == json.loads(json.dumps({"nested": [{3}]}, default=str))
+
+
+def test_one_letter_wrapper_message_stays_readable() -> None:
+    try:
+        try:
+            raise _integrity_error()
+        except IntegrityError as exc:
+            raise RuntimeError("e") from exc
+    except RuntimeError as outer:
+        record = _record(exc_info=_exc_info(outer))
+    record.msg, record.args = "user lookup failed", None
+
+    payload = json.loads(JsonFormatter().format(record))
+
+    assert payload["msg"] == "user lookup failed"
+    assert payload["exc"].startswith(f"RuntimeError <- {IE}\n")
+    assert "DETAIL" not in json.dumps(payload)
+
+
+def test_finished_task_argument_is_described() -> None:
+    async def insert() -> None:
+        raise _integrity_error()
+
+    loop = asyncio.new_event_loop()
+    try:
+        task = loop.create_task(insert())
+        loop.run_until_complete(asyncio.sleep(0))
+        record = _record()
+        record.msg, record.args = "task %r failed", (task,)
+        line = JsonFormatter().format(record)
+    finally:
+        loop.close()
+
+    assert f"exception={IE}" in json.loads(line)["msg"]
+    assert PII not in line
+    assert "DETAIL" not in line
 
 
 def test_database_traceback_keeps_frame_locations_only() -> None:
@@ -238,14 +292,31 @@ def test_a_record_that_cannot_be_formatted_names_only_where(
     log = logging.getLogger("capsule.test.broken")
     log.addHandler(handler)
     log.propagate = False
+    frame = inspect.currentframe()
+    assert frame is not None
+    token = request_id_var.set("rid-broken")
     try:
         log.error("x: %s %s", _integrity_error())  # one argument for two placeholders
+        call_line = frame.f_lineno - 1
     finally:
+        request_id_var.reset(token)
         log.removeHandler(handler)
         log.propagate = True
 
     line = json.loads(stream.getvalue())
+    assert set(line) == {
+        "ts",
+        "level",
+        "logger",
+        "msg",
+        "source_logger",
+        "where",
+        "error",
+        "request_id",
+    }
     assert line["source_logger"] == "capsule.test.broken"
-    assert line["where"].endswith(f"test_logging.py:{line['where'].rsplit(':', 1)[1]}")
+    assert line["where"] == f"{__file__}:{call_line}"
     assert line["error"] == "TypeError"
+    assert line["request_id"] == "rid-broken"
+    assert line["ts"].endswith("+00:00")
     assert PII not in stream.getvalue() + capsys.readouterr().err

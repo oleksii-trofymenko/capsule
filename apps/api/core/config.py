@@ -98,6 +98,8 @@ class Settings(BaseModel):
 
     @property
     def signing_key(self) -> SigningKey:
+        if not self.signing_keys:
+            raise ConfigError("no JWT signing keys")
         return self.signing_keys[0]
 
     def verification_key(self, kid: str) -> SecretBytes | None:

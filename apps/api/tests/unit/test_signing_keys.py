@@ -130,6 +130,8 @@ def test_settings_without_keys_build_but_the_app_refuses_them() -> None:
 
     with pytest.raises(ConfigError, match="no JWT signing keys"):
         create_app(settings)
+    with pytest.raises(ConfigError, match="no JWT signing keys"):
+        _ = settings.signing_key
 
 
 def test_app_reads_the_fixed_path_and_refuses_to_start_without_it(
