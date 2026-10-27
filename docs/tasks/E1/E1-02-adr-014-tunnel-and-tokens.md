@@ -30,7 +30,7 @@ Auth endpoints, the app's session handling and the tunnel all depend on one deci
 
 ## Allowed files
 
-- `docs/adr/014-*.md`, `docs/adr/README.md` (index row only), and a separate `docs/adr/0xx-*.md` only if the libraries get their own ADR
+- `docs/adr/014-*.md`, `docs/adr/023-auth-libraries.md`, `docs/adr/README.md` (index rows 014 and 023 only), `docs/security.md` (H2 row only), `docs/tasks/E1/E1-07-sign-up-sign-in-api.md` and `docs/tasks/E1/E1-08-rate-limiting.md` (acceptance criteria only)
 
 ## Out of scope
 
