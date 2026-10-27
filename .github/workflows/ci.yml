@@ -323,7 +323,8 @@ jobs:
 
   # E0-13: build the api image and run the real Compose stack (`make up`) with throwaway secrets,
   # then the SeaweedFS lockdown check and a restart that must keep Postgres, Redis and SeaweedFS
-  # data (E0-14: the S3 object must be readable right after `make up`).
+  # data (E0-14: the S3 object must be readable right after `make up`). E1-05b (ADR-015): the JWT
+  # key file gets the production layout, api must read it, and no generated value may reach the logs.
   # Triage: docs/runbooks/compose-stack.md, "CI job `stack` fails".
   stack:
     name: stack (compose smoke)
@@ -338,16 +339,93 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      # env-init writes random values for every `change-me` in .env.example and prints no value.
-      # Each one is masked here, before any later step can print it; `make up` reuses this .env.
+      # env-init writes random values for every `change-me` in .env.example and the files in
+      # secrets/ (ADR-015), and prints no value. `generate-only` skips the file layout, so every
+      # value can be masked here, before any later step can print it; `make up` reuses them.
+      # Every value also goes to a mode-600 pattern file for the leaked-value log check, and that
+      # check is written once to $RUNNER_TEMP/leak-check.sh for the two places that run it.
       - name: Throwaway secrets (generated and masked)
         run: |
-          bash infra/compose/env-init.sh .
+          bash infra/compose/env-init.sh . generate-only
+          patterns="$RUNNER_TEMP/leak-patterns"
+          install -m 600 /dev/null "$patterns"
           for key in $(sed -nE 's/^([A-Z0-9_]+)=change-me$/\1/p' .env.example); do
             value=$(sed -nE "s/^${key}=(.*)$/\1/p" .env)
             [ -n "$value" ] || { echo "::error::$key missing from .env"; exit 1; }
             echo "::add-mask::$value"
+            printf '%s\n' "$value" >> "$patterns"
           done
+          shopt -s nullglob
+          files=(secrets/*)
+          [ "${#files[@]}" -gt 0 ] || { echo "::error::no files in secrets/ after env-init"; exit 1; }
+          for f in "${files[@]}"; do
+            case ${f#secrets/} in
+              jwt_signing_keys) ;; # `kid=hexkey` lines: each hex value masked on its own
+              *) echo "::error::no masking rule for $f; add one here (ADR-015)"; exit 1 ;;
+            esac
+            n=0
+            while IFS= read -r line; do
+              value=${line#*=}
+              [[ $value =~ ^[0-9a-f]{64}$ ]] || { echo "::error::$f line $((n + 1)) is not kid=<64 hex>"; exit 1; }
+              echo "::add-mask::$value"
+              printf '%s\n' "$value" >> "$patterns"
+              n=$((n + 1))
+            done < "$f"
+            [ "$n" -gt 0 ] || { echo "::error::$f has no key lines"; exit 1; }
+            echo "$f: $n value(s) masked"
+          done
+          echo "leak patterns: $(wc -l < "$patterns") value(s) (.env and secrets/)"
+          cat > "$RUNNER_TEMP/leak-check.sh" <<'EOF'
+          # Fails if any generated value appears in the stack logs (ADR-015).
+          set -euo pipefail
+          p="$RUNNER_TEMP/leak-patterns"
+          [ -s "$p" ] || { echo "::error::leak patterns file is missing or empty"; exit 1; }
+          # ADR-024: the one exception. SeaweedFS logs the S3 access key ID (an identifier, not a
+          # secret) in its startup line; only that line, only from the seaweedfs service, is dropped.
+          # The ID anywhere else still fails. The full line shape is matched (name = first 8 hex of the
+          # ID, the ID = 48 lowercase hex from env-init, end of line), so appended or reworded text is
+          # not dropped and CI fails closed. SeaweedFS 4.48 writes `auth_credentials.go:582 Added ...`
+          # (no `]`); `\]?` also takes the standard glog form.
+          adr024='^seaweedfs-[0-9]+ +\| [^|]*auth_credentials\.go:[0-9]+\]? Added admin identity from AWS environment variables: name=admin-[0-9a-f]{8}, accessKey=[0-9a-f]{48}$'
+          # scan: reads logs on stdin; exit 0 = a generated value found, 1 = none, 2+ = error.
+          scan() {
+            local kept rc=0
+            kept=$(grep -vE "$adr024") || rc=$?
+            [ "$rc" -le 1 ] || return 2
+            grep -qFf "$p" <<< "$kept"
+          }
+          # Controls, each must hit (nothing is printed): the ADR-024 message from another service;
+          # the real seaweedfs line with text appended; a reworded seaweedfs line.
+          first=$(head -n1 "$p")
+          msg='auth_credentials.go:582 Added admin identity from AWS environment variables: name=admin-00000000, accessKey='
+          z48=000000000000000000000000000000000000000000000000
+          for control in "api-1  | I1027 $msg$first" \
+            "seaweedfs-1  | I1027 $msg$z48, extra=$first" \
+            "seaweedfs-1  | I1027 auth_credentials.go:582 Added admin identity from env: $first"; do
+            scan <<< "$control" || { echo "::error::leak grep self-test did not match"; exit 1; }
+          done
+          unset first control
+          # A variable, not a pipe: with pipefail, `grep -q` closing the pipe early hides a hit.
+          logs=$($COMPOSE logs --no-color)
+          rc=0
+          scan <<< "$logs" || rc=$?
+          case $rc in
+            0) echo "::error::a generated secret appears in the stack logs; see docs/runbooks/secret-leak.md"; exit 1 ;;
+            1) echo "none of the $(wc -l < "$p") generated value(s) appear in the logs" ;;
+            *) echo "::error::leak grep failed (exit $rc)"; exit 1 ;;
+          esac
+          EOF
+      # Same layout as production (ADR-015): secrets/ 0700, key file root:10001 0440 via sudo.
+      # From here on the runner (uid 1001) can read it only with sudo.
+      - name: Secrets layout (sudo)
+        run: |
+          bash infra/compose/env-init.sh .
+          stat -c '%n %U:%g %a' secrets secrets/jwt_signing_keys
+          if test -r secrets/jwt_signing_keys; then
+            echo "::error::the runner can still read secrets/jwt_signing_keys after the layout"
+            exit 1
+          fi
+          sudo test -r secrets/jwt_signing_keys
       - name: Pull images
         run: |
           $COMPOSE pull --quiet --ignore-buildable
@@ -357,6 +435,8 @@ jobs:
         run: $COMPOSE build api
       - name: make up (health checks, then /v1/ready 200)
         run: make up
+      - name: api reads its file secret
+        run: $COMPOSE exec -T api test -r /run/secrets/jwt_signing_keys
       # ADR-022 (E1-05a): error lines without DETAIL, CONTEXT or STATEMENT. Checked here because
       # the integration job's service containers cannot take the postgres `command`.
       - name: Postgres log settings (ADR-022)
@@ -397,6 +477,8 @@ jobs:
           export SEAWEEDFS_S3_ACCESS_KEY SEAWEEDFS_S3_SECRET_KEY
           psql "CREATE TABLE ci_smoke (v text); INSERT INTO ci_smoke VALUES ('kept');"
           test "$($COMPOSE exec -T redis redis-cli SET ci:smoke kept)" = "OK"
+          # Leaked-value check before `make down` removes these containers and their logs.
+          bash "$RUNNER_TEMP/leak-check.sh"
           put=$(s3 put) || true # an empty result is reported below, not lost to bash -e
           if [ "${put%% *}" != "200" ]; then
             echo "::error::S3 PUT before restart: ${put:-<none>} (want 200); see docs/runbooks/compose-stack.md"
@@ -410,6 +492,8 @@ jobs:
           echo "postgres: ${got_pg:-<none>}  redis: ${got_redis:-<none>}  s3: ${got_s3:-<none>}"
           [ "$got_s3" = "200 kept" ] || echo "::error::S3 GET right after make up: ${got_s3:-<none>} (want 200 kept); see docs/runbooks/compose-stack.md"
           test "$got_pg" = "kept" && test "$got_redis" = "kept" && test "$got_s3" = "200 kept"
+      - name: No generated secret in the stack logs (after restart)
+        run: bash "$RUNNER_TEMP/leak-check.sh"
       # Container state and logs only. Never `compose config` or `docker inspect` here: both print
       # the interpolated secrets. Keep the `service | ` prefix: a log line then cannot start with
       # `::` and act as a workflow command. If `--no-log-prefix` is ever used, wrap the dump in
@@ -423,7 +507,8 @@ jobs:
         if: always()
         run: |
           [ ! -f .env ] || $COMPOSE down --volumes --remove-orphans
-          rm -f .env
+          # secrets/ is runner-owned 0700, so its root-owned file is removed without sudo.
+          rm -rf .env secrets "$RUNNER_TEMP/leak-patterns" "$RUNNER_TEMP/leak-check.sh"
 
   ci-ok:
     name: ci-ok

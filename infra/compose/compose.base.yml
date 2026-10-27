@@ -26,6 +26,8 @@ services:
       READY_PROBE_TIMEOUT_S: ${READY_PROBE_TIMEOUT_S:-1.0}
       DATABASE_CONNECT_TIMEOUT_S: ${DATABASE_CONNECT_TIMEOUT_S:-5}
       REDIS_SOCKET_TIMEOUT_S: ${REDIS_SOCKET_TIMEOUT_S:-5.0}
+    # ADR-015: file secrets at /run/secrets/<name>; api is the only consumer.
+    secrets: [jwt_signing_keys]
     ports:
       - "127.0.0.1:${API_HOST_PORT:-8000}:8000"
     networks: [backend, edge]
@@ -166,6 +168,10 @@ services:
       # this is not protection against a stolen disk; that needs host disk encryption (README).
       - -s3.encryptVolumeData
       - -master.telemetry=false
+      # No -v: glog verbosity stays at the default. Raising it needs the CI leak check re-run
+      # (ADR-024): SigV4 failure logging grows with verbosity and may print the S3 access key ID
+      # in lines the filter does not drop. At the default, a wrong-secret request logs no ID
+      # (checked on 4.48; check-seaweedfs.sh sends one before the leak check runs).
     environment:
       # The one S3 identity (admin), read on every start. Without any identity SeaweedFS S3 would
       # accept anonymous requests.
@@ -217,6 +223,13 @@ configs:
 
       [jwt.filer_signing]
       key = "${SEAWEEDFS_JWT_FILER_SIGNING_KEY:?set in .env}"
+
+# ADR-015: application secrets, one file each in the gitignored repo-root secrets/, created by
+# env-init.sh (`make up`). Outside Swarm Compose bind-mounts them and ignores uid/gid/mode; the host
+# file's owner and mode (set by env-init.sh) are what the container sees. Cloud: change `file:` only.
+secrets:
+  jwt_signing_keys:
+    file: ../../secrets/jwt_signing_keys
 
 networks:
   backend:
