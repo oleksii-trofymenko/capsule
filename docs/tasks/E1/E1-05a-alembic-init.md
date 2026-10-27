@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | review |
+| Status | done |
 | Owner | backend-engineer |
 | Reviewers | code-reviewer, security-engineer |
 | Estimate | S |
@@ -40,7 +40,7 @@ E1-05 is the first card that needs tables. Split out of E1-05 (2026-10-27) so th
 
 ## Notes (filled while working)
 
-- Plan approved: 2026-10-27 (PR #29)
+- Plan approved: 2026-10-27 (Orchestrator). PR #29.
 - Decisions:
   - 2026-10-27 (implementation):
     - alembic 1.20.0 brings in Mako 1.4.3 and MarkupSafe 3.0.4; all three are older than the `exclude-newer` cutoff.
@@ -63,9 +63,10 @@ E1-05 is the first card that needs tables. Split out of E1-05 (2026-10-27) so th
   - CI `stack` job: 69–80 s before (main runs) → 68 s after (run 40536723184). Its `make up` step: 4 s → 5 s.
   - `make test`: 69 passed (was 59), 74 after the review fixes.
   - After the review fixes: clean `make up` 11 s; CI `stack` 69 s (run 40539486212).
+  - QA 2026-10-27 (qa-engineer, head e93ce67, own project): pass on all criteria. migrate 0.60–0.74 s and always before api; cold `make up` 6–9 s, warm 24.5 s (SeaweedFS variance); `alembic current` = baseline head; terse/panic set and the Postgres log holds no DETAIL, STATEMENT or row value; failing migrate (bad password, failing migration) keeps api `created` and leaks no password or row value, and the failing migration rolls back fully; check-privileges and check-seaweedfs ok; `make test` 74 passed; CI `stack` 77 s.
 - Left for later:
+  - A malformed `DATABASE_URL` makes `migrate` print a full traceback (fixed message, no secret) because `database_url_from_env()` runs outside the sanitised block in `env.py`. Low; fold into the next card that touches `env.py`.
   - `REDIS_URL` has the same leak S1 fixed for the database: `Settings.from_env` quotes a bracketed host (`'secrethost' does not appear to be an IPv4 or IPv6 address`). Not fixed here because `core/` was allowed for the database URL only; needs a card.
   - `tests/unit/test_migrations.py`: Ruff sorts `migrations` as third-party there, because the root `known-first-party` list does not name it. Cosmetic; add it the next time the root `pyproject.toml` changes.
   - `migrate` logs nothing on success (no Alembic logging). If operators want the applied revisions in logs, route Alembic through `core/logging`.
-  - Not exercised locally: a failing `migrate` keeping `api` down. This relies on Compose's `service_completed_successfully`.
   - `terse` does not hide role names in Postgres auth-failure lines; consider a card.
