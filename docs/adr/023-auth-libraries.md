@@ -1,6 +1,6 @@
 # ADR-023: Auth libraries: PyJWT (no extras) and argon2-cffi
 
-- Status: proposed
+- Status: accepted (2026-10-27)
 - Date: 2026-10-27
 - Deciders: Orchestrator, security-engineer, project owner
 - Related: E1-02, E1-05, E1-07; ADR-005, ADR-014, ADR-018, ADR-019, ADR-020

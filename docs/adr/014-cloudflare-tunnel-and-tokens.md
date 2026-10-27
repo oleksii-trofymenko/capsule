@@ -1,6 +1,6 @@
 # ADR-014: Cloudflare quick tunnel, opaque guest credential, HS256 access JWT with rotating refresh tokens
 
-- Status: proposed
+- Status: accepted (2026-10-27)
 - Date: 2026-10-27
 - Deciders: Orchestrator, security-engineer, project owner
 - Related: E1-02, E1-05, E1-07, E1-08, E1-12, E1-13, E1-15, E1-17, E8-01; ADR-003, ADR-015, ADR-022 (retention, deletion ledger), ADR-023 (auth libraries); `docs/security.md` (P1, P3, A1–A9, A15, H2, R2–R8); `docs/design/flows.md` F6
@@ -37,7 +37,7 @@ The phone holds an opaque guest credential and, after any sign-in, an opaque rot
 - 256 random bits, base64url (43 characters). The server keeps a SHA-256 hash.
 - `POST /v1/auth/guest` without a body creates a guest principal and returns the credential plus a token pair. No IP, device id, email or analytics id is stored.
 - `POST /v1/auth/guest` with the credential returns a new token family for the same guest.
-- Rejected with the same 401 as an unknown credential when the guest's `last_activity_at` is older than the ADR-022 retention period (30 days), even if the purge (E1-10) has not run yet.
+- Rejected with the same 401 as an unknown credential when the guest's `last_activity_at` is older than the configured ADR-022 retention (upper bound 30 days; a shorter retention shortens the credential's life too), even if the purge (E1-10) has not run yet.
 
 **Access token**
 - `alg` HS256 only; the allow-list is fixed in code.

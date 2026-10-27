@@ -19,7 +19,7 @@ One file per decision: `docs/adr/NNN-short-title.md`, from `000-template.md`. Ac
 | 011 | Ollama first, vLLM after a benchmark | planned | E3 |
 | 012 | Model choice and VRAM budget on 16 GB | planned | E3 / E6 |
 | 013 | OpenTelemetry → Grafana stack, Langfuse for LLM traces | planned | E2 |
-| [014](014-cloudflare-tunnel-and-tokens.md) | Cloudflare quick tunnel (E1 demo), opaque guest credential, 10-minute HS256 access JWT, rotating refresh tokens with a 30 s grace rule, argon2id | proposed | E1-02 |
+| [014](014-cloudflare-tunnel-and-tokens.md) | Cloudflare quick tunnel (E1 demo), opaque guest credential, 10-minute HS256 access JWT, rotating refresh tokens with a 30 s grace rule, argon2id | accepted | E1-02 |
 | 015 | Secrets: SOPS / Docker secrets locally, a vault in the cloud | planned | E1 |
 | [016](016-test-strategy.md) | Test strategy: pytest against real Postgres and Redis, Jest + RNTL, Maestro, k6 | accepted | E0-05 |
 | 017 | Eval runner and LLM-as-judge in CI | planned | E3 |
@@ -27,4 +27,4 @@ One file per decision: `docs/adr/NNN-short-title.md`, from `000-template.md`. Ac
 | [019](019-ci-cd-github-actions.md) | CI/CD: GitHub Actions with one required gate check (`ci-ok`); GHCR and EAS for delivery | accepted | E0-05 |
 | [020](020-api-test-tooling.md) | API test tooling: httpx, PyYAML and jsonschema as dev-only dependencies | accepted | E0-06 |
 | [021](021-asgi-server-uvicorn.md) | uvicorn (no extras) as the ASGI server for the API | accepted | E0-07 |
-| [023](023-auth-libraries.md) | Auth libraries: PyJWT (no extras) and argon2-cffi | proposed | E1-02 |
+| [023](023-auth-libraries.md) | Auth libraries: PyJWT (no extras) and argon2-cffi | accepted | E1-02 |
