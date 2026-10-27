@@ -8,11 +8,13 @@
 # - applies the file layout on every run (skipped with `generate-only`, which CI uses to mask the
 #   values before the layout makes them unreadable). The folder is restricted before a key file is
 #   written, so a new key is born restricted (Windows: a key created in a run that then fails is removed).
+#   Windows: secrets/ is restricted first; the .env temp file is created inside it, restricted and
+#   checked before any secret is written to it. Unsupported systems stop before .env is created.
 #     Git Bash: secrets/ and .env readable only by the current user (SID) and SYSTEM (icacls),
 #               then verified from the SDDL (SIDs, not localised names);
 #     Linux:    secrets/ 0700, each secret file root:<consumer GID> 0440 (root or sudo);
 # - refuses to continue while any `change-me` value is left.
-# Writes go to a temp file in the same folder and are moved into place (atomic, mode 600).
+# Writes go to a temp file on the same volume and are moved into place (atomic, mode 600).
 # Every failure exits non-zero, which stops `make up`. Runbook: docs/runbooks/compose-stack.md.
 # Usage: env-init.sh <repo root> [generate-only]. Works in Git Bash and on Linux.
 set -euo pipefail
@@ -44,62 +46,33 @@ hex_value() {
 
 umask 077
 ktmp=
+tmp=
+aclout=
 created_key=
-tmp=$(mktemp "$root/.env.tmp.XXXXXX")
 layout=
 # A key created in this run is removed if the Windows layout then fails (its ACL is unverified).
 # On Linux it is born 0600 under umask 077 and kept, so the printed root commands still apply.
 cleanup() {
   local rc=$?
-  rm -f "$tmp" ${ktmp:+"$ktmp"}
+  rm -f ${tmp:+"$tmp"} ${ktmp:+"$ktmp"} ${aclout:+"$aclout"}
   if [ "$rc" -ne 0 ] && [ -n "$created_key" ] && [ "$layout" = windows ]; then
     rm -f "$jwt_file" && echo "env-init: removed secrets/jwt_signing_keys created in this failed run" >&2
   fi
 }
 trap cleanup EXIT
 
-if [ ! -f "$env_file" ]; then
-  while IFS= read -r line || [ -n "$line" ]; do
-    if [[ $line =~ ^([A-Z0-9_]+)=change-me$ ]]; then
-      hex_value 24 value
-      printf '%s=%s\n' "${BASH_REMATCH[1]}" "$value"
-    else
-      printf '%s\n' "$line"
-    fi
-  done <"$example" >"$tmp"
-  mv "$tmp" "$env_file"
-  echo "env-init: created .env with generated secrets (never commit it)"
-else
-  cp "$env_file" "$tmp"
-  added=()
-  while IFS= read -r line || [ -n "$line" ]; do
-    if [[ $line =~ ^([A-Z0-9_]+)=change-me$ ]] && ! grep -q "^${BASH_REMATCH[1]}=" "$env_file"; then
-      [ -z "$(tail -c1 "$tmp")" ] || echo >>"$tmp"
-      hex_value 24 value
-      printf '%s=%s\n' "${BASH_REMATCH[1]}" "$value" >>"$tmp"
-      added+=("${BASH_REMATCH[1]}")
-    fi
-  done <"$example"
-  if [ "${#added[@]}" -gt 0 ]; then
-    mv "$tmp" "$env_file"
-    echo "env-init: added to .env with generated values: ${added[*]}"
-  fi
-fi
-unset value
-
 # --- Windows (Git Bash) layout ---
 sid=
 # acl_check <path>: the DACL may name only the user SID and SYSTEM. Read as SDDL (`icacls /save`),
 # which uses SIDs and fixed aliases (SY = S-1-5-18) whatever the display language.
 acl_check() {
-  local out sddl ace trustee n=0 name=${1#"$root"/}
-  out=$(mktemp "$root/.acl.tmp.XXXXXX")
-  if ! icacls "$(cygpath -w "$1")" /save "$(cygpath -w "$out")" /q >/dev/null; then
-    rm -f "$out"
-    die "icacls /save on $name failed"
-  fi
-  sddl=$(tr -d '\000\r' <"$out" | sed -n 2p)
-  rm -f "$out"
+  local sddl ace trustee n=0 name=${1#"$root"/}
+  # Global, so the EXIT trap removes it if anything below fails.
+  aclout=$(mktemp "$root/.acl.tmp.XXXXXX")
+  icacls "$(cygpath -w "$1")" /save "$(cygpath -w "$aclout")" /q >/dev/null || die "icacls /save on $name failed"
+  sddl=$(tr -d '\000\r' <"$aclout" | sed -n 2p)
+  rm -f "$aclout"
+  aclout=
   # The whole line must be a DACL of plain allow (A) or deny (D) entries: no other ACE type, no
   # nested parentheses (conditional ACEs), nothing after the last entry. Anything else fails closed.
   local shape='^D:[A-Z]*(\((A|D);[^()]*\))+$'
@@ -114,15 +87,29 @@ acl_check() {
   [ "$n" -gt 0 ] || die "$name has an empty access list"
 }
 
-layout_windows_dir() {
+# windows_sid: sets $sid to the current user's SID.
+windows_sid() {
   # Stops Git Bash from turning `/grant:r`, `/user` and `*S-1-...` into Windows paths. Paths are
   # passed through `cygpath -w` instead.
   export MSYS2_ARG_CONV_EXCL='*'
   # Git Bash's own `whoami` prints only the name; a name could also match a same-named group.
   sid=$("$(cygpath -u "$SYSTEMROOT")/System32/whoami.exe" /user /fo csv /nh | tr -d '\r"' | cut -d, -f2) ||
-    die "whoami.exe /user failed; cannot restrict secrets/"
+    die "whoami.exe /user failed; cannot restrict .env and secrets/"
   # Local and Microsoft accounts only; an Entra ID account (S-1-12-1-...) needs a change here.
   [[ $sid =~ ^S-1-5-21-[0-9-]+$ ]] || die "unexpected user SID from whoami.exe /user: '$sid'"
+}
+
+# restrict_file <path>: inheritance removed, only the user and SYSTEM. Files take plain F:
+# inheritance flags apply to folders only.
+restrict_file() {
+  local w name=${1#"$root"/}
+  w=$(cygpath -w "$1")
+  icacls "$w" /inheritance:r /grant:r "*$sid:F" /grant:r "*S-1-5-18:F" >/dev/null ||
+    die "icacls on $name failed"
+  icacls "$w" /remove:g "*S-1-5-32-544" >/dev/null || die "icacls /remove:g Administrators on $name failed"
+}
+
+layout_windows_dir() {
   local dir
   dir=$(cygpath -w "$secrets_dir")
   # Inheritance removed; only the user and SYSTEM (S-1-5-18), inherited by every file inside.
@@ -133,17 +120,16 @@ layout_windows_dir() {
 }
 
 layout_windows_files() {
-  local f envw
-  # Each file keeps only what it inherits from secrets/ (drops any explicit entry).
+  local f
+  # Each file keeps only what it inherits from secrets/ (drops any explicit entry). A .env temp
+  # file left by a killed run keeps its own restricted list; the check below still covers it.
   for f in "$secrets_dir"/* "$secrets_dir"/.[!.]*; do
     [ -e "$f" ] || continue
+    case ${f##*/} in .env.tmp.*) continue ;; esac
     icacls "$(cygpath -w "$f")" /reset >/dev/null || die "icacls /reset on ${f#"$root"/} failed"
   done
-  # Files take plain F: inheritance flags apply to folders only.
-  envw=$(cygpath -w "$env_file")
-  icacls "$envw" /inheritance:r /grant:r "*$sid:F" /grant:r "*S-1-5-18:F" >/dev/null ||
-    die "icacls on .env failed"
-  icacls "$envw" /remove:g "*S-1-5-32-544" >/dev/null || die "icacls /remove:g Administrators on .env failed"
+  # Re-applied on every run: also covers a .env copied in by hand.
+  restrict_file "$env_file"
   acl_check "$secrets_dir"
   for f in "$secrets_dir"/* "$secrets_dir"/.[!.]*; do
     [ -e "$f" ] || continue
@@ -181,9 +167,57 @@ if [ "$mode" != generate-only ]; then
   esac
 fi
 
-# The folder is restricted first, so the key file below is born restricted.
+# Windows: secrets/ is restricted first and the .env temp file is created inside it (same volume, so
+# the move stays a rename), so the temp file is never readable by anyone else. It is then given its
+# own access list and checked while still empty, so every .env this run moves into place (created
+# or appended) is born restricted. A failure here exits before any secret is written; the trap
+# removes the temp file and an existing .env stays as it was.
+if [ "$layout" = windows ]; then
+  windows_sid
+  mkdir -p "$secrets_dir"
+  layout_windows_dir
+  tmp=$(mktemp "$secrets_dir/.env.tmp.XXXXXX")
+  restrict_file "$tmp"
+  acl_check "$tmp"
+else
+  tmp=$(mktemp "$root/.env.tmp.XXXXXX")
+fi
+
+if [ ! -f "$env_file" ]; then
+  while IFS= read -r line || [ -n "$line" ]; do
+    if [[ $line =~ ^([A-Z0-9_]+)=change-me$ ]]; then
+      hex_value 24 value
+      printf '%s=%s\n' "${BASH_REMATCH[1]}" "$value"
+    else
+      printf '%s\n' "$line"
+    fi
+  done <"$example" >"$tmp"
+  mv "$tmp" "$env_file"
+  echo "env-init: created .env with generated secrets (never commit it)"
+else
+  cp "$env_file" "$tmp"
+  added=()
+  while IFS= read -r line || [ -n "$line" ]; do
+    if [[ $line =~ ^([A-Z0-9_]+)=change-me$ ]] && ! grep -q "^${BASH_REMATCH[1]}=" "$env_file"; then
+      [ -z "$(tail -c1 "$tmp")" ] || echo >>"$tmp"
+      hex_value 24 value
+      printf '%s=%s\n' "${BASH_REMATCH[1]}" "$value" >>"$tmp"
+      added+=("${BASH_REMATCH[1]}")
+    fi
+  done <"$example"
+  if [ "${#added[@]}" -gt 0 ]; then
+    mv "$tmp" "$env_file"
+    echo "env-init: added to .env with generated values: ${added[*]}"
+  fi
+fi
+unset value
+# Gone before layout_windows_files walks secrets/.
+rm -f "$tmp"
+tmp=
+
+# The folder is restricted first, so the key file below is born restricted (Windows: done above).
 mkdir -p "$secrets_dir"
-[ -z "$layout" ] || "layout_${layout}_dir"
+[ "$layout" != linux ] || layout_linux_dir
 
 # JWT signing keys (ADR-014, ADR-015): one `kid=hexkey` line per key; the first line signs.
 if [ -e "$jwt_file" ] || [ -L "$jwt_file" ]; then
