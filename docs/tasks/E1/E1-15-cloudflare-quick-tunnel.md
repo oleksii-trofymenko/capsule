@@ -21,6 +21,8 @@ As the project owner, I want to reach the API on the home PC from my phone over 
 - [ ] The tunnel is opt-in: plain `make up` does not start it. A documented command (and a Make target only if the Orchestrator approves it) starts it and prints the public URL.
 - [ ] Only the API is reachable through the tunnel. Postgres, Redis, SeaweedFS and any admin UI are not. A check script or CI step proves this, for example that requests for other host ports through the tunnel fail.
 - [ ] The API runs with the "behind tunnel" flag from E1-08, so `CF-Connecting-IP` is trusted only in this setup.
+- [ ] R2, peer side (`docs/security.md`): fix how the API identifies the cloudflared container as the socket peer. Its address on `edge` is dynamic, and traffic through the published host port can arrive from the bridge gateway, so use for example a dedicated network for cloudflared and api, or a resolved service name. The result goes into the API's trusted-peer config from E1-08. A check proves that requests through the published host port, or from another container on `edge`, are not treated as the tunnel.
+- [ ] R7 / T5: the runbook and `compose.tunnel.yml` comment state that the quick tunnel is for the E1 demo only, not external beta. E8-01 replaces it.
 - [ ] The runbook explains how to put the printed URL into the mobile env (`EXPO_PUBLIC_*`, E1-12) and that the URL changes every time cloudflared restarts.
 - [ ] Tests: `make up` plus the tunnel on the home PC, `GET /v1/health` through the public URL returns 200 from a phone on mobile data, and the check scripts pass. CI keeps passing without the tunnel.
 
@@ -30,7 +32,7 @@ As the project owner, I want to reach the API on the home PC from my phone over 
 
 ## Out of scope
 
-- Buying a domain, named tunnels, Cloudflare Access for admin UIs (E2/E8).
+- Buying a domain, named tunnels, pinning and the bundle scan (E8-01). Cloudflare Access for admin UIs (E2/E8).
 - An external uptime monitor (E2).
 
 ## Analytics events
@@ -44,7 +46,8 @@ As the project owner, I want to reach the API on the home PC from my phone over 
   - Filed 2026-10-27 from the approved E1 plan.
   - 2026-10-27, owner: the E1 demo uses a free quick tunnel (trycloudflare) with the URL set through env. Buying a domain (needed for a named tunnel with a stable URL) is deferred to E8.
   - 2026-10-27, owner: email and password with no email sending, a self-declared 18+ checkbox, and 30-day guest retention. None of these changes this card, but the tunnel exposes the auth endpoints, so E1-08 rate limits must be live before the demo (E1-16).
+  - 2026-10-27: amended from E1-01 threat model (docs/security.md).
 - Numbers:
 - Left for later:
-  - Quick tunnels are meant for testing. They have no uptime guarantee and a concurrent-request cap, and Cloudflare documents that they do not support Server-Sent Events. Check this before E3 streaming; it may force the E8 domain and named tunnel earlier.
+  - Quick tunnels are meant for testing. They have no uptime guarantee and a concurrent-request cap, and Cloudflare documents that they do not support Server-Sent Events. Check this before E3 streaming; it may force E8-01 (domain and named tunnel) earlier.
   - The random URL is unlisted, not secret. Treat the API as public (E1-01 threat model).

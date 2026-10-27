@@ -20,9 +20,11 @@ As a new user, I want the app to work the moment I open it, without an account, 
 - [ ] Expo Router navigation shell with a placeholder home and a header menu that has an entry for sign-in/sign-up (screens in E1-13) and Settings (E1-14).
 - [ ] First launch: the app gets a guest credential silently and stores it only in `expo-secure-store` (`AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY`), through `shared/storage`. The user sees nothing.
 - [ ] The API client (generated from the contract) adds the access token, refreshes once on 401 with rotation, and avoids parallel refreshes (one refresh in flight at a time). If refresh fails, it falls back to a new guest credential and keeps the old account tokens out of storage.
-- [ ] First launch after a reinstall wipes secure-store leftovers (ADR-003).
+- [ ] R6 (client side, `docs/security.md`): a retry after a lost refresh response follows the ADR-014 grace rule. Single-flight refresh alone does not cover this. Tested.
+- [ ] P2: the first launch after a reinstall wipes secure-store and MMKV (ADR-003), using `wipeAll()` from E1-18.
+- [ ] P5: the app carries only non-secret `EXPO_PUBLIC_*` values (the API base URL). The bundle scan is E8-02.
 - [ ] The API base URL comes from env (`EXPO_PUBLIC_*`), so the quick-tunnel URL changes with no code change (E1-15).
-- [ ] No token or credential in logs, Sentry breadcrumbs or MMKV.
+- [ ] P1: no token or credential in logs, Sentry breadcrumbs or MMKV.
 - [ ] A typed `track()` in `shared/analytics` records the E1 events. It sends nothing until consent and PostHog are wired (E2/E3); tests check the calls.
 - [ ] Tests (Jest + RNTL):
   - [ ] Silent guest start.
@@ -49,5 +51,6 @@ As a new user, I want the app to work the moment I open it, without an account, 
 - Plan approved:
 - Decisions:
   - Filed 2026-10-27 from the approved E1 plan. Added the dependency on E1-18 because `apps/mobile` has no Expo project yet.
+  - 2026-10-27: amended from E1-01 threat model (docs/security.md).
 - Numbers:
 - Left for later:

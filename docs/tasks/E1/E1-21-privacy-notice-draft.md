@@ -27,13 +27,15 @@ As a user, I want a plain-English explanation of what Capsule keeps about me, fo
   - [ ] "Capsule is for people aged 18 or older".
   - [ ] No body or appearance rating.
   - [ ] Your GDPR rights and how to complain to a supervisory authority.
+- [ ] The notice gives a contact address for erasure and access requests from people who can't sign in (lost phone, forgotten password; there is no reset in E1). The address itself is `TODO(owner)` until the owner provides one.
+- [ ] `docs/runbooks/erasure-requests.md` (short) explains how the owner handles such a request: how to check the request without collecting more personal data than the account already holds, how to run the E1-09 deletion for that account, the one-month GDPR deadline, and how to reply.
 - [ ] Every fact matches the accepted ADRs. Anything not decided yet is marked `TODO(owner)`, never invented.
 - [ ] A note that the text needs a legal check by the owner before external beta.
 - [ ] Tests: none (docs). `make lint` passes.
 
 ## Allowed files
 
-- `docs/legal/privacy-notice.md` (new)
+- `docs/legal/privacy-notice.md` (new), `docs/runbooks/erasure-requests.md` (new)
 
 ## Out of scope
 
@@ -49,5 +51,6 @@ As a user, I want a plain-English explanation of what Capsule keeps about me, fo
 - Decisions:
   - Filed 2026-10-27, added to the approved E1 plan. The owner decided that the 18+ rule goes in the Privacy notice, and no card owned the notice.
   - 2026-10-27, owner: self-declared "I'm 18 or older"; guest data 30 days after last activity; accounts never deleted automatically; backups ≤ 30 days.
+  - 2026-10-27: amended from E1-01 threat model (docs/security.md). This card now owns the contact address for erasure requests and a short runbook for handling them. It stays S.
 - Numbers:
 - Left for later:
