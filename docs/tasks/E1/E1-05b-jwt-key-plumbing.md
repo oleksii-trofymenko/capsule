@@ -19,10 +19,10 @@ E1-05 signs access tokens with keys that must never sit in env, logs or CI artef
 
 - [ ] ADR-015: `env-init.sh` creates `secrets/jwt_signing_keys` (`kid=hex`, 32 random bytes, `kid` = UTC date) if missing and never overwrites it.
 - [ ] On every `make up` it applies the layout and fails `make up` on any non-zero exit:
-  - [ ] Git Bash: `MSYS2_ARG_CONV_EXCL='*'`; `icacls` grants the user SID (from `whoami /user`) and SYSTEM with (OI)(CI) on `secrets/`, inheritance removed, Administrators removed; `.env` gets plain `F` for the same two.
+  - [ ] Git Bash: `MSYS2_ARG_CONV_EXCL='*'`; `icacls` grants the user SID (from `whoami /user`) and SYSTEM with (OI)(CI) on `secrets/`, inheritance removed, Administrators removed; `.env` gets plain `F` for the same two, inheritance and Administrators removed. The SID comes from `whoami.exe /user` via `cygpath` (Git Bash's own `whoami` cannot).
   - [ ] Linux: `secrets/` 0700; the key file `root:10001` 0440 via sudo; a clear error when sudo is missing.
 - [ ] The file is mounted as a Compose file secret into `api` only (top-level `secrets:` block and the `api` `secrets:` list). No other service gets it.
-- [ ] CI `stack` job: generate, then mask each key value separately, then apply the layout (after it, the runner reads the files only with `sudo`); fail if any generated value appears in the stack logs. `.env` and `secrets/` are never uploaded.
+- [ ] CI `stack` job: generate (`env-init.sh . generate-only`), then mask each key value separately, then apply the layout (after it, the runner reads the files only with `sudo`); fail if any generated value appears in the stack logs. `.env` and `secrets/` are never uploaded. A step proves `api` can read the file: `exec -T api test -r /run/secrets/jwt_signing_keys`.
 - [ ] `docker compose config --quiet` passes in the lint job with no `secrets/` files present (confirm on the runner's Compose version).
 - [ ] `docs/runbooks/secret-leak.md` (new, JWT row and the general steps from ADR-015) and `docs/runbooks/key-rotation.md` (new, JWT section: 90-day manual rotation, 15-minute wait, restore uses the leak procedure).
 - [ ] Tests: `make lint`, `make test`, CI green; a CI run shows the masked values never appear; locally on Git Bash, `icacls secrets` output in the PR shows only the user and SYSTEM.
@@ -46,6 +46,7 @@ E1-05 signs access tokens with keys that must never sit in env, logs or CI artef
 
 - Plan approved:
 - Decisions:
+  - 2026-10-27 (plan): `generate-only` argument makes generate → mask → layout literal; Linux layout skipped when `stat` already shows `0:10001 440` (no sudo prompt every `make up`); a missing file path that Docker turned into a folder fails loudly; leak check runs before `make down` and after the restart.
   - Filed 2026-10-27, split out of E1-05 (infra half of the ADR-015 criterion).
 - Numbers:
 - Left for later:
