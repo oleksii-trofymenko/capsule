@@ -25,6 +25,7 @@ ENV_VARS: dict[str, str] = {
     "ready_probe_timeout_s": "READY_PROBE_TIMEOUT_S",
     "database_connect_timeout_s": "DATABASE_CONNECT_TIMEOUT_S",
     "redis_socket_timeout_s": "REDIS_SOCKET_TIMEOUT_S",
+    "guest_retention_days": "GUEST_RETENTION_DAYS",
 }
 
 
@@ -76,6 +77,9 @@ class Settings(BaseModel):
     # Client timeouts for normal traffic. libpq takes whole seconds.
     database_connect_timeout_s: int = Field(default=5, ge=1, le=60)
     redis_socket_timeout_s: float = Field(default=5.0, gt=0, le=60)
+    # ADR-022: guest data lives at most 30 days after last activity; ADR-014 rejects the guest
+    # credential from then on. The E1-10 purge reuses it.
+    guest_retention_days: int = Field(default=30, ge=1, le=30)
     # ADR-015 rotation: the first key signs; the second, if any, only verifies. Empty for
     # processes that hold no signing secret (the worker); create_app refuses to start without.
     signing_keys: tuple[SigningKey, ...] = Field(default=(), max_length=2)

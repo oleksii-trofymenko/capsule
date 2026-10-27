@@ -34,7 +34,17 @@ from core.db_errors import (
 request_id_var: ContextVar[str | None] = ContextVar("request_id", default=None)
 
 # `extra=` keys that may appear in a log line. Keep them free of personal data.
-ALLOWED_EXTRA = ("method", "path", "status", "duration_ms", "check", "error")
+# `principal_id` is the random, pseudonymous id (docs/security.md §6, A15).
+ALLOWED_EXTRA = (
+    "method",
+    "path",
+    "status",
+    "duration_ms",
+    "check",
+    "error",
+    "event",
+    "principal_id",
+)
 
 # Libraries that log URLs, queries or connection details at INFO/DEBUG; only warnings pass.
 QUIET_LOGGERS = ("httpx", "httpcore", "psycopg", "sqlalchemy", "redis")

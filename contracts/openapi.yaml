@@ -11,6 +11,8 @@ security: []
 tags:
   - name: ops
     description: Liveness and readiness for Compose and the uptime monitor.
+  - name: auth
+    description: Guest credentials and token pairs (ADR-014).
 
 paths:
   /v1/health:
@@ -79,7 +81,67 @@ paths:
         "500":
           $ref: "#/components/responses/InternalError"
 
+  /v1/auth/guest:
+    post:
+      operationId: postAuthGuest
+      summary: Create a guest, or start a new session for an existing guest.
+      description: |
+        Without a body, creates a guest and returns its credential with the first token pair
+        (201). With `guest_credential`, returns a new token pair for that guest (200). An unknown
+        credential, and one whose guest has had no activity within the guest retention, get the
+        same 401. No personal data is stored.
+
+        No idempotency key: replaying a stored response would mean storing the raw credential
+        (A4). A lost 201 leaves an empty guest, which the guest purge removes.
+      tags: [auth]
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GuestSignIn"
+      responses:
+        "201":
+          description: A new guest. Store `guest_credential` and `refresh_token` in secure storage.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/RequestId"
+            Cache-Control:
+              $ref: "#/components/headers/NoStore"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GuestSession"
+        "200":
+          description: A new token pair for the existing guest.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/RequestId"
+            Cache-Control:
+              $ref: "#/components/headers/NoStore"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TokenPair"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
 components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        A 10-minute access token from `/v1/auth/*` (ADR-014). Every failure gets the same
+        `Unauthorized` response.
+
   parameters:
     RequestId:
       name: X-Request-ID
@@ -97,7 +159,42 @@ components:
         type: string
         pattern: "^[A-Za-z0-9-]{1,64}$"
 
+    NoStore:
+      description: Token responses are never cached.
+      schema:
+        const: no-store
+
   responses:
+    Unauthorized:
+      description: |
+        Missing, malformed, expired or otherwise invalid credentials or tokens. The body is the
+        same for every cause.
+      headers:
+        X-Request-ID:
+          $ref: "#/components/headers/RequestId"
+        WWW-Authenticate:
+          schema:
+            const: Bearer
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+          example:
+            type: about:blank
+            title: Unauthorized
+            status: 401
+            request_id: 3f1c2a9e0b7d4c55a1e2f3a4b5c6d7e8
+
+    ValidationError:
+      description: The request failed validation. Rejected values are never echoed.
+      headers:
+        X-Request-ID:
+          $ref: "#/components/headers/RequestId"
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/ValidationProblem"
+
     InternalError:
       description: Unexpected server error. No internal details are returned.
       headers:
@@ -141,6 +238,57 @@ components:
           const: ok
         redis:
           const: ok
+
+    Secret:
+      description: |
+        An opaque guest credential or refresh token. No pattern: a malformed value gets the same
+        401 as an unknown one.
+      type: string
+      minLength: 1
+      maxLength: 256
+
+    GuestSignIn:
+      type: object
+      additionalProperties: false
+      required: [guest_credential]
+      properties:
+        guest_credential:
+          $ref: "#/components/schemas/Secret"
+
+    TokenPair:
+      type: object
+      additionalProperties: false
+      required: [access_token, token_type, expires_in, refresh_token]
+      properties:
+        access_token:
+          description: "A JWT. Clients treat it as opaque and send it as `Authorization: Bearer`."
+          type: string
+          minLength: 1
+          maxLength: 1024
+        token_type:
+          const: Bearer
+        expires_in:
+          description: Seconds until the access token expires.
+          const: 600
+        refresh_token:
+          $ref: "#/components/schemas/Secret"
+
+    GuestSession:
+      description: The first token pair of a new guest, with the guest's credential.
+      type: object
+      additionalProperties: false
+      required: [access_token, token_type, expires_in, refresh_token, guest_credential]
+      properties:
+        access_token:
+          $ref: "#/components/schemas/TokenPair/properties/access_token"
+        token_type:
+          const: Bearer
+        expires_in:
+          const: 600
+        refresh_token:
+          $ref: "#/components/schemas/Secret"
+        guest_credential:
+          $ref: "#/components/schemas/Secret"
 
     Dependency:
       type: string

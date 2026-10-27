@@ -102,6 +102,40 @@ async def test_unknown_path_matches_problem_schema() -> None:
     schema_validator({"$ref": "#/components/schemas/Problem"}).validate(response.json())
 
 
+def test_contract_token_schemas_hold_the_adr_014_shape() -> None:
+    pair = {
+        "access_token": "a.b.c",
+        "token_type": "Bearer",
+        "expires_in": 600,
+        "refresh_token": "r",
+    }
+    tokens = schema_validator({"$ref": "#/components/schemas/TokenPair"})
+    session = schema_validator({"$ref": "#/components/schemas/GuestSession"})
+    sign_in = schema_validator({"$ref": "#/components/schemas/GuestSignIn"})
+
+    assert tokens.is_valid(pair)
+    assert not tokens.is_valid(pair | {"expires_in": 3600})
+    assert not tokens.is_valid(pair | {"token_type": "bearer"})
+    assert not tokens.is_valid(pair | {"guest_credential": "g"})
+    assert session.is_valid(pair | {"guest_credential": "g"})
+    assert not session.is_valid(pair)
+    # No pattern: a malformed credential reaches the server and gets 401, not 422.
+    assert sign_in.is_valid({"guest_credential": "not base64 ?!"})
+    assert not sign_in.is_valid({"guest_credential": "x" * 257})
+    assert not sign_in.is_valid({})
+
+
+def test_contract_guest_endpoint_declares_no_store_and_bearer_401() -> None:
+    operation = contract()["paths"]["/v1/auth/guest"]["post"]
+    unauthorized = contract()["components"]["responses"]["Unauthorized"]
+
+    for status in ("200", "201"):
+        assert "Cache-Control" in operation["responses"][status]["headers"]
+    assert operation["responses"]["401"] == {"$ref": "#/components/responses/Unauthorized"}
+    assert unauthorized["headers"]["WWW-Authenticate"]["schema"] == {"const": "Bearer"}
+    assert "bearerAuth" in contract()["components"]["securitySchemes"]
+
+
 def test_contract_rejects_a_ready_problem_without_failing() -> None:
     validator = schema_validator({"$ref": "#/components/schemas/ReadyProblem"})
     body = {"type": "about:blank", "title": "Service Unavailable", "status": 503}
