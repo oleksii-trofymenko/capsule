@@ -23,10 +23,12 @@ As an account holder, I want my email to stay unreadable if the server's disk or
 - [ ] Sign-up, sign-in, export (E1-09) and password reset (E1-17, if merged) keep working through the service interface. Export returns the decrypted email to its owner only.
 - [ ] Backups (E1-23) contain only ciphertext for email. A test inspects a dump made in the test run.
 - [ ] Tests: unit (encrypt/decrypt, blind index stable under normalisation, wrong key fails); integration with real Postgres (uniqueness through the blind index, sign-in lookup, migration of existing rows); latency of sign-in before and after recorded in Numbers.
+- [ ] ADR-015: two separate 32-byte keys in `secrets/` (`email_encryption_keys` as `kid=hex` lines, the first encrypts; `email_blind_index_key`); before the first real email is stored, the owner confirms in Decisions that off-host copies exist (date only, no key material).
 
 ## Allowed files
 
 - `apps/api/modules/auth/**`, `apps/api/core/**`, `apps/api/migrations/**`, `apps/api/pyproject.toml`, `apps/api/uv.lock`, `apps/api/tests/**`, `infra/compose/env-init.sh`, `docs/runbooks/key-rotation.md` (new), `docs/adr/0xx-*.md` and `docs/adr/README.md` (only if a library needs an ADR)
+- ADR-015: `infra/compose/compose.base.yml` (`email_encryption_keys` and `email_blind_index_key` secret entries only); `docs/runbooks/secret-leak.md` (email-keys row); `docs/runbooks/key-rotation.md` (email section; E1-05 creates the file)
 
 ## Out of scope
 

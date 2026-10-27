@@ -37,6 +37,7 @@ As a guest, I want to use Capsule straight away without creating an account, so 
   - [ ] Happy, failure and edge paths, including two concurrent refreshes with the same token.
 - [ ] Every new query ships `EXPLAIN ANALYZE` output in the PR.
 - [ ] Tell the Orchestrator: the refresh endpoint is the first one that takes user input, which triggers E1-06.
+- [ ] ADR-015: `env-init.sh` creates `secrets/jwt_signing_keys` (`kid=hex`, 32 random bytes) if missing and applies `icacls` on Git Bash; the API reads it from `/run/secrets/`; CI masks every `secrets/` value, fails if one appears in stack logs, and the lint job's `compose config` validation still passes.
 
 ## Allowed files
 
@@ -44,6 +45,7 @@ As a guest, I want to use Capsule straight away without creating an account, so 
 - `apps/api/modules/auth/**`, `apps/api/core/**`, `apps/api/migrations/**`, `apps/api/main.py`, `apps/api/pyproject.toml`, `apps/api/uv.lock`, `apps/api/alembic.ini`
 - `apps/api/tests/**`
 - `infra/compose/env-init.sh`, `infra/compose/test.env` (key variables only)
+- ADR-015: `.env.example` (comment pointing to `secrets/` only); `infra/compose/compose.base.yml` (top-level `secrets:` block and the `secrets:` lists of `api` and `worker` only); `.github/workflows/ci.yml` (`stack` job: masking of `secrets/` values and the leaked-value log check only); `docs/runbooks/secret-leak.md` (new), `docs/runbooks/key-rotation.md` (new; JWT section)
 
 ## Out of scope
 

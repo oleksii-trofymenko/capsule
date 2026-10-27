@@ -24,11 +24,13 @@ As an account holder who forgot my password, I want to reset it from my email, s
 - [ ] The provider API key is stored as ADR-015 requires. Email bodies and addresses never appear in logs.
 - [ ] Tests: unit and integration with a fake email sender at the system boundary; contract; expired, reused and wrong tokens.
 - [ ] `docs/design/flows.md` Analytics gains `password_reset_requested` (no properties) and `password_reset_completed` (no properties). They are sent by the app in the mobile follow-up card.
+- [ ] ADR-015: the provider key is read from `/run/secrets/email_provider_api_key`; `env-init.sh` creates it empty and prints the file to fill, never a value; CI uses a dummy.
 
 ## Allowed files
 
 - `contracts/openapi.yaml`, `apps/api/modules/auth/**`, `apps/api/core/**`, `apps/api/migrations/**`, `apps/api/pyproject.toml`, `apps/api/uv.lock`, `apps/api/tests/**`
 - `docs/adr/0xx-*.md`, `docs/adr/README.md`, `docs/design/flows.md` (Analytics table only), `infra/compose/env-init.sh`
+- ADR-015: `infra/compose/compose.base.yml` (`email_provider_api_key` secret entry only); `docs/runbooks/secret-leak.md` (email-provider row)
 
 ## Out of scope
 
