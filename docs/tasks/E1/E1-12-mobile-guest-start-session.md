@@ -7,7 +7,7 @@
 | Reviewers | code-reviewer, security-engineer, product-designer |
 | Estimate | M |
 | Metric | Activation rate (no sign-up gate before the first guide) |
-| Depends on | E1-05, E1-18 |
+| Depends on | E1-05, E1-05c, E1-18 |
 | ADRs | 001, 002, 003, 014 |
 | Design spec | `docs/design/flows.md` (F6 "Guest data"), `docs/design/onboarding-wireframes.md` (no sign-in on Welcome) |
 
@@ -20,6 +20,7 @@ As a new user, I want the app to work the moment I open it, without an account, 
 - [ ] Expo Router navigation shell with a placeholder home and a header menu that has an entry for sign-in/sign-up (screens in E1-13) and Settings (E1-14).
 - [ ] First launch: the app gets a guest credential silently and stores it only in `expo-secure-store` (`AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY`), through `shared/storage`. The user sees nothing.
 - [ ] The API client (generated from the contract) adds the access token, refreshes once on 401 with rotation, and avoids parallel refreshes (one refresh in flight at a time). If refresh fails, it falls back to a new guest credential and keeps the old account tokens out of storage.
+- [ ] A 503 from refresh is retried after `Retry-After` and never signs the user out or drops the tokens (E1-05c).
 - [ ] R6 (client side, `docs/security.md`): a retry after a lost refresh response follows the ADR-014 grace rule. Single-flight refresh alone does not cover this. Tested.
 - [ ] P2: the first launch after a reinstall wipes secure-store and MMKV (ADR-003), using `wipeAll()` from E1-18.
 - [ ] P5: the app carries only non-secret `EXPO_PUBLIC_*` values (the API base URL). The bundle scan is E8-02.

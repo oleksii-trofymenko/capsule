@@ -1,4 +1,4 @@
-# E1-05 · Auth module: guest credential and refresh-token rotation
+# E1-05 · Auth module: guest credential, tables and current principal
 
 | Field | Value |
 | --- | --- |
@@ -7,8 +7,8 @@
 | Reviewers | code-reviewer, security-engineer |
 | Estimate | M |
 | Metric | API latency (simple endpoints): p95 < 200 ms, p99 < 500 ms |
-| Depends on | E1-02, E1-04, E1-05a, E1-05b |
-| ADRs | 005, 007, 014, 015 |
+| Depends on | E1-02, E1-04, E1-05a, E1-05b, E1-05d |
+| ADRs | 005, 007, 014, 015, 022, 023 |
 | Design spec | `docs/design/flows.md` (F6 "Guest data") |
 
 ## Why
@@ -17,41 +17,36 @@ As a guest, I want to use Capsule straight away without creating an account, so 
 
 ## Acceptance criteria
 
-- [ ] Contract first: `contracts/openapi.yaml` gains the guest-credential, token-refresh and logout operations (paths per ADR-014, e.g. `POST /v1/auth/guest`, `POST /v1/auth/refresh`, `POST /v1/auth/logout`). Every error is RFC 9457.
-- [ ] `modules/auth` with a service interface. One migration (on the E1-05a baseline) adds principals (guest or account) with `last_activity_at` on every principal (ADR-022; used by E1-10), guest credentials, refresh families and refresh tokens with the ADR-014 states.
+- [ ] Contract first: `POST /v1/auth/guest` in `contracts/openapi.yaml` (201 with a new credential and the first token pair, 200 for an existing credential), plus the shared `bearerAuth` scheme and 401 response. Every error is RFC 9457. Token responses carry `Cache-Control: no-store`.
+- [ ] `modules/auth` with a service interface. One migration (on the E1-05a baseline) adds principals (guest or account) with `last_activity_at` on every principal (ADR-022; used by E1-10), guest credentials (no `revoked_at`: ADR-014 never revokes a credential), refresh families and refresh tokens with the ADR-014 states. The guest response already issues the first family and token.
 - [ ] Issuing a guest credential stores no personal data: no IP, device id, email or analytics id.
-- [ ] Refresh rotates the token on every use. A reused refresh token returns 401 and revokes its whole family. Logout revokes the family.
-- [ ] Expired, malformed, wrong-key and revoked tokens get a 401 problem document, with no detail that helps an attacker.
-- [ ] A reusable dependency gives protected endpoints the current principal (guest or account).
-- [ ] Signing keys are read from `/run/secrets/jwt_signing_keys` (E1-05b provides the file) as ADR-015 requires; `api` refuses to start with zero or more than two keys, and the error names no value.
-- [ ] Each key is at least 32 bytes after hex decoding (at least 64 hex characters, ADR-014; E1-05b writes exactly 64). A shorter or non-hex value stops `api` with an error that names the `kid`, never the value.
+- [ ] A guest credential older than the guest retention (ADR-022, 30 days since last activity; a constant, not a setting) gets 401.
+- [ ] Expired, malformed, wrong-key and revoked access tokens get a 401 problem document with `WWW-Authenticate: Bearer`, with no detail that helps an attacker.
+- [ ] A reusable dependency gives protected endpoints the current principal (guest or account). `kind` comes from the principal row, never from the token claim; a deleted principal gets 401.
+- [ ] `last_activity_at` is touched only after a 2xx response (ADR-022: failed and unauthenticated requests do not count), at most hourly, in its own statement. A failed touch is logged without parameters and never turns a 2xx into an error. Guest sign-in with an existing credential counts.
 - [ ] Logs carry no token, credential or IP at INFO level.
-- [ ] ADR-022, API half of E1-05a M1: a database error (for example `IntegrityError`) never reaches the logs with the driver's DETAIL, parameters or row values. The JSON formatter and the exception handler log only the error type, SQLSTATE and constraint name. A test triggers a unique violation and checks the log line.
-- [ ] A4 (`docs/security.md`): the server stores only token hashes, never raw tokens. The same applies to guest credentials (§6). A test reads the tables and finds no raw value.
-- [ ] R4: the uvicorn access log is off, or replaced by one that logs no client IP and no query string at INFO. A test checks this.
+- [ ] A4 (`docs/security.md`): the server stores only hashes of guest credentials and refresh tokens, never raw values. A test reads the tables and finds no raw value.
 - [ ] R5: token tests include `alg=none`, HS/public-key confusion, unknown `kid` and expired tokens. All of them return the same 401.
-- [ ] R6 (server side): a retry after a lost refresh response follows the ADR-014 grace rule. Tested inside and just outside the grace window.
-- [ ] A15: security events (sign-in, refresh reuse detected, family revoked) are logged under the pseudonymous principal id, without email, IP or token.
+- [ ] A15: guest created and guest signed in are logged under the pseudonymous principal id, without IP or credential.
 - [ ] Tests:
-  - [ ] Unit: token issue and verify, rotation, reuse detection.
+  - [ ] Unit: token issue and verify, R5.
   - [ ] Integration: real Postgres.
   - [ ] Contract: responses match the spec.
-  - [ ] Happy, failure and edge paths, including two concurrent refreshes with the same token.
+  - [ ] Happy, failure and edge paths, including the retention edge.
 - [ ] Every new query ships `EXPLAIN ANALYZE` output in the PR.
-- [ ] Tell the Orchestrator: the refresh endpoint is the first one that takes user input, which triggers E1-06.
+- [ ] Tell the Orchestrator: `POST /v1/auth/guest` is the first endpoint that takes user input, which triggers E1-06.
 
 ## Allowed files
 
 - `contracts/openapi.yaml`
-- `apps/api/modules/auth/**`, `apps/api/core/**`, `apps/api/migrations/**`, `apps/api/main.py`, `apps/api/pyproject.toml`, `apps/api/uv.lock`, `apps/api/alembic.ini`
+- `apps/api/modules/auth/**`, `apps/api/core/**`, `apps/api/migrations/**`, `apps/api/main.py`, `apps/api/pyproject.toml`, `apps/api/uv.lock`
 - `apps/api/tests/**`
-- `infra/compose/test.env` (key variables only), `.env.example` (new API variables only)
 
 ## Out of scope
 
+- Refresh rotation and logout (E1-05c). Key loading and database-error log sanitising (E1-05d).
 - Sign-up, sign-in, moving guest data (E1-07). Rate limits (E1-08). Purge job (E1-10). Mobile (E1-12).
 - Alembic setup and Postgres logging (E1-05a). Key generation, layout and CI checks (E1-05b).
-- If the PR goes over ~400 lines, split refresh and logout into E1-05c.
 
 ## Analytics events
 
@@ -59,11 +54,14 @@ As a guest, I want to use Capsule straight away without creating an account, so 
 
 ## Notes (filled while working)
 
-- Plan approved:
+- Plan approved: 2026-10-27 (Orchestrator), backend-engineer plan part B, with the security-engineer corrections above.
 - Decisions:
   - Filed 2026-10-27 from the approved E1 plan.
   - 2026-10-27: amended from E1-01 threat model (docs/security.md).
+  - 2026-10-27 (backend-engineer plan ~1,450 lines): split three ways. E1-05d (keys, database-error logs, R4 test) first, then this card (guest, tables, principal), then E1-05c (refresh and logout).
+  - 2026-10-27 (security-engineer): no `revoked_at` on guest credentials; `last_activity_at` only after a 2xx (the plan's pre-handler touch would break ADR-022). `POST /v1/auth/guest` takes no idempotency key (A4, decision above). Retention and key path are constants.
   - 2026-10-27: added the 32-byte key check (E1-05b review) and the API half of the database-error sanitising (E1-05a review, M1).
   - 2026-10-27: split into E1-05a (Alembic, migration runner, Postgres logging) and E1-05b (key plumbing); this card keeps the auth core. `last_activity_at` lives on `principals`. `POST /v1/auth/guest` is exempt from the idempotency-key rule: replaying a stored response would store the raw credential (A4); a lost response leaves an empty guest the purge removes.
 - Numbers:
 - Left for later:
+  - ADR-005 Ruff banned-import rules for `modules.auth` internals need the root `pyproject.toml`; file a card.
