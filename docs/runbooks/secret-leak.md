@@ -26,7 +26,7 @@ Use the row for the leaked secret. Restart only the services named in the row.
 | JWT signing key | `secrets/jwt_signing_keys` (`api`) | See "JWT signing key" below. |
 | Rate-limit HMAC key (E1-08) | `secrets/ratelimit_hmac_key` (`api`) | Replace the value, then `$C restart api`. The sign-in throttle resets for up to one window. |
 | Email encryption keys, blind-index key (E1-24) | `secrets/email_*` (`api`) | New key, re-encrypt or re-index every row, then remove the old key. Follow the E1-24 procedure. Update the off-host copies. |
-| SeaweedFS JWT or filer key | `.env` today (`secrets/seaweedfs_security.toml` after E1-08) | New values, then `make up`. Then run `bash infra/compose/check-seaweedfs.sh`. |
+| SeaweedFS JWT or filer key | `.env` today (`secrets/seaweedfs_security.toml` after E1-25) | New values, then `make up`. Then run `bash infra/compose/check-seaweedfs.sh`. |
 | Infra credentials (Postgres, Redis, SeaweedFS S3) | `.env` | Change the value in the service and in `.env`, then `make up`. See "Credentials in `.env`" in `compose-stack.md`. |
 | Email-provider API key (E1-17), tunnel token (E8-01) | `secrets/` | Revoke it at the provider first, then put the new one in the file and restart its service. |
 | Backup age identity (E1-23) | off-host only | Make a new pair and set `BACKUP_AGE_RECIPIENT`. If the backup disk was exposed, delete the backups encrypted to the old identity. |

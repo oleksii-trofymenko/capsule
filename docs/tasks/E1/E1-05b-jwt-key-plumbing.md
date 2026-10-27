@@ -33,7 +33,7 @@ E1-05 signs access tokens with keys that must never sit in env, logs or CI artef
 - `.env.example` (comment pointing to `secrets/` only)
 - `.github/workflows/ci.yml` (`stack` job: sudo layout step, per-value masking of `.env` and `secrets/`, leaked-value log check with the ADR-024 line filter only)
 - `docs/runbooks/secret-leak.md` (new), `docs/runbooks/key-rotation.md` (new; JWT section), `docs/runbooks/compose-stack.md` (secrets section)
-- `docs/adr/024-s3-access-key-id-not-secret.md` (new), `docs/adr/README.md` (the 024 row only), `docs/security.md` (the Assets "Secrets" row only; added 2026-10-27 with the ADR-024 decision)
+- `docs/adr/024-s3-access-key-id-not-secret.md` (new), `docs/adr/README.md` (the 024 row only), `docs/security.md` (the Assets secrets rows; added 2026-10-27 with the ADR-024 decision)
 
 ## Out of scope
 
@@ -67,6 +67,12 @@ E1-05 signs access tokens with keys that must never sit in env, logs or CI artef
     - The `compose.base.yml` comment says raising `-v` needs the leak check re-run.
     - `docs/security.md` now has separate rows for the S3 access key ID (identifier) and the S3 secret key (secret).
     - E2-01 redaction of Authorization headers and presigned-URL signatures is filed separately by the Orchestrator.
+  - 2026-10-27 (re-review, both approve; blocker B1/N1 fixed):
+    - The `adr024` regex now matches the full observed line: `name=admin-[0-9a-f]{8}, accessKey=[0-9a-f]{48}$`. 48 lowercase hex is what env-init writes.
+    - Appended text (for example `, secretKey=…`) or reworded text is no longer dropped. Two more self-test lines prove it: the real seaweedfs line with `, extra=<first pattern>`, and a reworded seaweedfs line.
+    - N2: `acl_check` now validates the whole SDDL line as `D:` plus plain `A` or `D` entries with no nested parentheses. Conditional or object ACEs, and any `S:` part, fail closed, and the `%%S:*` cut is gone.
+    - N4: the leak runbook names E1-25 for the `seaweedfs_security.toml` move.
+    - N3 (a `.env` from a failed first run keeps its inherited ACL) predates this PR; the Orchestrator files it.
   - 2026-10-27 (review, resolved by the decision above): with M3 in place, CI `stack` fails (run 40539320041). The cause is not a code leak. SeaweedFS 4.48 logs the S3 access key ID at startup (INFO, `auth_credentials.go:582`: `Added admin identity from AWS environment variables: name=admin-<first 8 hex of the key>, accessKey=<SEAWEEDFS_S3_ACCESS_KEY>`). This was reproduced locally. No other `.env` value and no `secrets/` value appears in any log, and the S3 secret key does not appear. The same line is in the home server's seaweedfs logs today (local driver, on the host). The check was left strict, as instructed. Options:
     - (a) Treat the S3 access key ID as an identifier, not secret material (AWS convention: it cannot sign without the secret key). Keep it masked but leave it out of the leak patterns, with a comment. This needs a security-engineer decision, and an ADR-015 note because ADR-015 says "each `.env` value".
     - (b) Keep the check strict and move the S3 identity from environment variables to an identities config file (ADR-015 option 5, deferred). Whether that path logs the key is not tested.
