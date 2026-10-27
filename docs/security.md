@@ -105,7 +105,7 @@ STRIDE: S spoofing, T tampering, R repudiation, I information disclosure, D deni
 | A5 | Forged or tampered JWT (wrong key, `alg=none`, HS/public-key confusion, expired token) | S/E | Fixed algorithm allow-list, key id, expiry checked. All failures give the same 401 problem document | E1-05 (ADR-014, ADR-015) |
 | A6 | Account enumeration on sign-in | I | Same problem document and similar timing for an unknown email and a wrong password (dummy hash) | E1-07 |
 | A7 | Account enumeration on sign-up | I | **Accepted risk (owner sign-off 2026-10-27).** flows.md 3a needs an "already registered → offer sign-in" answer, and with no email sending we cannot hide that state. Behaviour E1-07 tests: sign-up with a registered email returns a conflict problem document that offers sign-in, with no other account detail. Limited by per-IP sign-up limits. Revisit when E1-17 adds email verification, which can replace the conflict answer with a "check your email" reply | E1-07, E1-08 |
-| A8 | Guest-data takeover during the move to an account | E/T | Move only in the sign-up/sign-in request that presents both a valid, unrevoked guest credential and the new session. One transaction, credential revoked afterwards. Never matched by email, device or analytics id. A revoked or foreign credential moves nothing. Concurrency rule R3 | E1-07 |
+| A8 | Guest-data takeover during the move to an account | E/T | Move only in the sign-up/sign-in request that presents both a valid guest credential and the new session. One transaction that deletes the guest principal and credential and writes the deletion ledger (ADR-014, ADR-022). Never matched by email, device or analytics id. An unknown, deleted or foreign credential moves nothing. Concurrency rule R3 | E1-07 |
 | A9 | Stolen guest credential moved into the attacker's account | I | **Accepted:** same impact as the theft itself (P1, A4) | E1-12 |
 | A10 | Mass assignment and malformed input | T | Pydantic models with unknown fields forbidden, lengths and enums from the contract. Property-based tests over every operation | E1-05, E1-07, E1-06 |
 | A11 | Irreversible "Delete my data" with a stolen access token | T/D | Requires an authenticated principal. **Accepted for E1:** no re-authentication step, because there is no password reset yet | E1-09 |
@@ -182,7 +182,14 @@ Rules:
 
 ### Retention
 
-Placeholder. The retention ADR (E1-03) fills this in and links its table. Owner bounds already fixed: guest data 30 days after last activity; accounts until "Delete my data"; backups at most 30 days; media within 24 h and never backed up (ADR-008).
+[ADR-022](adr/022-data-retention-deletion-export.md) holds the full table, the definition of last activity, the restore steps and the export format. In short:
+
+- Guest data: deleted 30 days after last activity (config, upper bound 30). Accounts: never deleted automatically. Unsaved consultation history of an account: deleted per consultation, 30 days after the last activity on that consultation. Saved guides stay until "Delete my data".
+- Refresh families: expired or revoked ones are deleted within 24 h. Rate-limit keys: TTL at most 24 h. LangGraph checkpoints: 24 h after an abandoned consultation (at most 7 days by config).
+- Logs: Postgres runs with `log_error_verbosity = terse` and `log_min_error_statement = panic`. cloudflared runs at `info` with no access logging. Container logs are size-capped until Loki (E2, 30 days or less).
+- Media: within 24 h, never backed up (ADR-008). Postgres backups: at most 30 days, encrypted, on the external disk only.
+- "Delete my data" and the guest-data move delete server data in one transaction and write the principal id to a deletion ledger (a table plus a file on the backup disk). The ledger is pruned only up to the oldest backup on disk. A restore refuses backups older than 30 days, replays the ledger and the purges, then revokes every refresh family and rotates the JWT key before the API takes traffic.
+- Sentry, PostHog and Langfuse retention and per-id deletion: to verify in E2. A purged guest's PostHog data follows vendor retention.
 
 ### Erasure without a password
 

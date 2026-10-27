@@ -24,6 +24,7 @@ The API becomes reachable from the internet through the tunnel. Without limits, 
   - [ ] Per principal (guest or account) on authenticated endpoints.
   - [ ] R1 (`docs/security.md`): failed sign-ins are throttled on email plus IP. The account is never locked, so an attacker cannot lock out the real user.
   - [ ] R1/D5: rate-limit keys use an HMAC of the IP or email (HMAC key per ADR-015), never the raw value, and every key has a TTL.
+  - [ ] Per-principal keys hold the principal id (pseudonymous, no HMAC needed) with a TTL of 24 h or less, under a prefix that lets "Delete my data" remove them (ADR-022). Record them in the Redis row of `docs/security.md` §6.
 - [ ] Limits come from config. The defaults and the reasons for them are written in the card notes.
 - [ ] Going over a limit returns 429 as an RFC 9457 problem document with `Retry-After`. The contract documents the 429 response on the affected operations.
 - [ ] R2: `CF-Connecting-IP` is trusted only when the "behind tunnel" flag is on **and** the socket peer is the cloudflared container. The peer identity comes from config, so this card doesn't wait for E1-15, which fixes how the peer is identified. In every other case the socket address is used. Tests show the header is ignored on a direct request through the published host port, on a request from another container on `edge`, and when the flag is off.
@@ -35,7 +36,7 @@ The API becomes reachable from the internet through the tunnel. Without limits, 
 
 - `contracts/openapi.yaml`
 - `apps/api/core/**`, `apps/api/modules/auth/**`, `apps/api/main.py`, `apps/api/pyproject.toml`, `apps/api/uv.lock`
-- `apps/api/tests/**`, `docs/adr/0xx-*.md` and `docs/adr/README.md` (only if a library is added)
+- `apps/api/tests/**`, `docs/adr/0xx-*.md` and `docs/adr/README.md` (only if a library is added), `docs/security.md` (§6 Redis rate-limit row only)
 
 ## Out of scope
 
