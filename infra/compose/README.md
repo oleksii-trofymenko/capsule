@@ -25,6 +25,7 @@ The worker (E3), GPU services, observability and the tunnel are out of scope her
 
 - Every service has a health check (start period 30 s, checked every 1 s during it, then every 10 s, 3 retries) and `restart: unless-stopped`. Restarts after a reboot need Docker Desktop to start at login (Settings → General).
 - The API's health check is `/v1/health`, defined in `apps/api/Dockerfile`. It is never `/v1/ready`: after a dependency recovers from a hang, `/v1/ready` may keep failing for up to about 10 s (E0-06), and readiness must not restart the API.
+- SeaweedFS is healthy only when the S3 API answers and the volume server has registered with the master (a data node in `/dir/status`). Before that, reads of existing objects fail with 500 (E0-14).
 - `make up` waits for every health check, then for `/v1/ready` to return 200 (up to 60 s).
 
 ## Configuration and secrets
