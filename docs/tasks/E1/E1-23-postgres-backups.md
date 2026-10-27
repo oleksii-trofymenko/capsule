@@ -44,7 +44,7 @@ As a user with an account, I want my saved guides to survive a disk failure on t
 
 ## Out of scope
 
-- Off-site or cloud backups (need a free tier decision). Point-in-time recovery. Media backup (never, ADR-008).
+- Off-site or cloud backups (owner decision 2026-10-27: not yet; external disk only until beta). Point-in-time recovery. Media backup (never, ADR-008).
 
 ## Analytics events
 

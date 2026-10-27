@@ -27,7 +27,7 @@ As a user, I want a plain-English explanation of what Capsule keeps about me, fo
   - [ ] "Capsule is for people aged 18 or older".
   - [ ] No body or appearance rating.
   - [ ] Your GDPR rights and how to complain to a supervisory authority.
-- [ ] The notice gives a contact address for erasure and access requests from people who can't sign in (lost phone, forgotten password; there is no reset in E1). The address itself is `TODO(owner)` until the owner provides one.
+- [ ] The notice gives a contact address for erasure and access requests from people who can't sign in (lost phone, forgotten password; there is no reset in E1). The address itself stays `TODO(owner)`: the owner will provide it later (decision 2026-10-27), and it must be filled before external beta.
 - [ ] `docs/runbooks/erasure-requests.md` (short) explains how the owner handles such a request: how to check the request without collecting more personal data than the account already holds, how to run the E1-09 deletion for that account, the one-month GDPR deadline, and how to reply.
 - [ ] Every fact matches the accepted ADRs. Anything not decided yet is marked `TODO(owner)`, never invented.
 - [ ] A note that the text needs a legal check by the owner before external beta.

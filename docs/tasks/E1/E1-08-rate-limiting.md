@@ -19,6 +19,8 @@ The API becomes reachable from the internet through the tunnel. Without limits, 
 
 - [ ] Redis-backed limits:
   - [ ] Per client IP on guest-credential issue, sign-up and sign-in.
+  - [ ] A global limit across all clients on sign-in plus sign-up, on top of the per-IP limit, so that requests spread across many IPs cannot keep the password hasher saturated (A1, A2). Default and reason in the card notes. Refresh and guest-credential endpoints never count against this global budget. Accepted remainder: while an attack fills the bucket, real users cannot sign in or sign up (CPU is protected, availability of sign-in is not); record it under R10 in `docs/security.md` when this card lands.
+  - [ ] Per-IP keys group IPv6 clients by their /64 prefix and IPv4 clients by the full address, so one host cannot dodge the limit by rotating addresses inside its /64. Tested with two addresses in the same /64.
   - [ ] Per principal (guest or account) on authenticated endpoints.
   - [ ] R1 (`docs/security.md`): failed sign-ins are throttled on email plus IP. The account is never locked, so an attacker cannot lock out the real user.
   - [ ] R1/D5: rate-limit keys use an HMAC of the IP or email (HMAC key per ADR-015), never the raw value, and every key has a TTL.
