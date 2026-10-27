@@ -322,7 +322,8 @@ jobs:
         run: npm audit --prefix apps/mobile --audit-level=high
 
   # E0-13: build the api image and run the real Compose stack (`make up`) with throwaway secrets,
-  # then the SeaweedFS lockdown check and a restart that must keep Postgres and Redis data.
+  # then the SeaweedFS lockdown check and a restart that must keep Postgres, Redis and SeaweedFS
+  # data (E0-14: the S3 object must be readable right after `make up`).
   # Triage: docs/runbooks/compose-stack.md, "CI job `stack` fails".
   stack:
     name: stack (compose smoke)
@@ -358,18 +359,45 @@ jobs:
         run: make up
       - name: SeaweedFS lockdown check
         run: bash infra/compose/check-seaweedfs.sh
-      # No S3 object read after the restart: it can fail for ~15-24 s until E0-14 lands.
-      - name: Restart keeps Postgres and Redis data
+      # The S3 read right after `make up` is the E0-14 regression test: one try, no retry. A retry
+      # would hide a health check that passes before the volume server has registered.
+      - name: Restart keeps Postgres, Redis and SeaweedFS data
         run: |
           psql() { $COMPOSE exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -tA -c "$1"' sh "$1"; }
+          # Signed S3 call from a neighbour container (as check-seaweedfs.sh); prints "<code> <body>".
+          # Keys reach it as environment variables (masked above), not command-line text.
+          s3() { # put | get
+            docker run --rm --network capsule_backend -e SEAWEEDFS_S3_ACCESS_KEY -e SEAWEEDFS_S3_SECRET_KEY \
+              --entrypoint sh "$(docker inspect --format '{{.Config.Image}}' "$($COMPOSE ps -q seaweedfs)")" -c '
+                set -- "$1" --aws-sigv4 aws:amz:us-east-1:s3 --max-time 5 -s -o /tmp/body -w "%{http_code}" \
+                  --user "$SEAWEEDFS_S3_ACCESS_KEY:$SEAWEEDFS_S3_SECRET_KEY"
+                op=$1; shift
+                case $op in
+                  put) curl "$@" -X PUT http://seaweedfs:8333/ci-smoke >/dev/null &&
+                       echo kept > /tmp/o && curl "$@" -T /tmp/o http://seaweedfs:8333/ci-smoke/o ;;
+                  get) curl "$@" http://seaweedfs:8333/ci-smoke/o ;;
+                esac
+                echo " $(head -c 300 /tmp/body | tr -d "\r\n")"' sh "$1"
+          }
+          # Only the two S3 keys leave .env, for `docker run -e` above.
+          SEAWEEDFS_S3_ACCESS_KEY=$(sed -nE 's/^SEAWEEDFS_S3_ACCESS_KEY=(.*)$/\1/p' .env)
+          SEAWEEDFS_S3_SECRET_KEY=$(sed -nE 's/^SEAWEEDFS_S3_SECRET_KEY=(.*)$/\1/p' .env)
+          export SEAWEEDFS_S3_ACCESS_KEY SEAWEEDFS_S3_SECRET_KEY
           psql "CREATE TABLE ci_smoke (v text); INSERT INTO ci_smoke VALUES ('kept');"
           test "$($COMPOSE exec -T redis redis-cli SET ci:smoke kept)" = "OK"
+          put=$(s3 put) || true # an empty result is reported below, not lost to bash -e
+          if [ "${put%% *}" != "200" ]; then
+            echo "::error::S3 PUT before restart: ${put:-<none>} (want 200); see docs/runbooks/compose-stack.md"
+            exit 1
+          fi
           make down
           make up
+          got_s3=$(s3 get) || true # an empty result is reported below, not lost to bash -e
           got_pg=$(psql "SELECT v FROM ci_smoke")
           got_redis=$($COMPOSE exec -T redis redis-cli GET ci:smoke)
-          echo "postgres: ${got_pg:-<none>}  redis: ${got_redis:-<none>}"
-          test "$got_pg" = "kept" && test "$got_redis" = "kept"
+          echo "postgres: ${got_pg:-<none>}  redis: ${got_redis:-<none>}  s3: ${got_s3:-<none>}"
+          [ "$got_s3" = "200 kept" ] || echo "::error::S3 GET right after make up: ${got_s3:-<none>} (want 200 kept); see docs/runbooks/compose-stack.md"
+          test "$got_pg" = "kept" && test "$got_redis" = "kept" && test "$got_s3" = "200 kept"
       # Container state and logs only. Never `compose config` or `docker inspect` here: both print
       # the interpolated secrets. Keep the `service | ` prefix: a log line then cannot start with
       # `::` and act as a workflow command. If `--no-log-prefix` is ever used, wrap the dump in

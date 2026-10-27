@@ -59,7 +59,7 @@ The `stack (compose smoke)` job in `.github/workflows/ci.yml` runs on PRs that t
 - `Build api image`: the Dockerfile or `apps/api/uv.lock` is broken. Reproduce with `$C build api`.
 - `make up`: open `Dump stack logs` (`ps --all`, then the last 200 lines from each service) and follow "`make up` fails or times out" above. `not ready after 60 s` means a dependency failed `/v1/ready`. The api log names it.
 - `SeaweedFS lockdown check`: see "SeaweedFS exposure check fails" below. Treat any `FAIL` as a security regression in the PR.
-- `Restart keeps Postgres and Redis data`: after `make down` / `make up`, the job reads back a Postgres row and a Redis key, and expects `postgres: kept  redis: kept`. A missing value means a volume, `user:`, `read_only` or Redis AOF change lost data on restart. Reproduce it under a throwaway project, never `capsule`. Only postgres and redis start, so port 8000 stays free. Tested in Git Bash:
+- `Restart keeps Postgres, Redis and SeaweedFS data`: after `make down` / `make up`, the job reads back a Postgres row, a Redis key and an S3 object, and expects `postgres: kept  redis: kept  s3: 200 kept`. A missing value means a volume, `user:`, `read_only` or Redis AOF change lost data on restart. `s3: 500 ...InternalError...` means the seaweedfs health check passed before the volume server registered: see "S3 reads fail right after a restart" below. The S3 read is tried once, on purpose. Do not add a retry. Reproduce it under a throwaway project, never `capsule`. Only postgres and redis start, so port 8000 stays free. Tested in Git Bash:
 
   ```sh
   d=$(mktemp -d); cp .env.example "$d/"; bash infra/compose/env-init.sh "$d"
@@ -153,3 +153,22 @@ docker compose --project-name capsule-test --env-file infra/compose/test.env -f 
   1. Rotate the S3 credentials and JWT keys in `.env`, then run `make up` and the check again.
   2. An injected identity vanishes on restart, but what it created stays. With the admin identity, list buckets, bucket policies and IAM policies (for example `$C exec seaweedfs sh -c 'echo "s3.bucket.list; s3.configure" | weed shell'`). Delete anything you do not recognise.
 - S3 status mismatch: compare `SEAWEEDFS_S3_*` in `.env` with what the container got (`$C exec seaweedfs env | grep AWS_ACCESS_KEY_ID`).
+
+## S3 reads fail right after a restart, or seaweedfs stays unhealthy (E0-14)
+
+The seaweedfs health check passes only when the S3 API answers and the volume server has registered with the master. A data node must appear in `/dir/status`. Before registration, reads of existing objects return `500 InternalError` and the log shows `not found` lines. Those lines also print chunk keys (E2-01), so do not paste them into issues.
+
+- seaweedfs stays `unhealthy`, or `make up` times out at 300 s: check whether the volume server registered with `$C exec seaweedfs wget -qO- http://127.0.0.1:9333/dir/status`. `"DataCenters":null` means no data node. Then read `$C logs --tail=100 seaweedfs` for the volume server's error. `permission denied` on `/data` is covered in "Permission denied on a data volume" above. A full disk or a damaged volume file also stops it.
+- Reads return 500 while seaweedfs is `healthy`: the health check no longer reflects registration, for example because a SeaweedFS bump changed `/dir/status`. Check that the output still has `"PublicUrl"` inside `DataNodes`, then fix the `test:` in `compose.base.yml`.
+- Reproduce under a throwaway project (seaweedfs only). Tested in Git Bash:
+
+  ```sh
+  d=$(mktemp -d); cp .env.example "$d/"; bash infra/compose/env-init.sh "$d"
+  R="docker compose --project-name capsule-repro --env-file $d/.env -f infra/compose/compose.base.yml"
+  s3() { $R exec -T seaweedfs sh -c 'curl -s -w " %{http_code}\n" --aws-sigv4 aws:amz:us-east-1:s3 --user "$AWS_ACCESS_KEY_ID:$AWS_SECRET_ACCESS_KEY" "$@"' sh "$@"; }
+  $R up --detach --wait seaweedfs
+  s3 -X PUT http://127.0.0.1:8333/ci-smoke; printf kept | s3 -T - http://127.0.0.1:8333/ci-smoke/o
+  $R down && $R up --detach --wait seaweedfs
+  s3 http://127.0.0.1:8333/ci-smoke/o   # must print kept 200
+  $R down --volumes; rm -rf "$d"
+  ```

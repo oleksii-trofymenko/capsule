@@ -156,7 +156,16 @@ services:
     tmpfs: [/tmp:size=64m]
     cap_drop: [ALL]
     healthcheck:
-      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8333/healthz"]
+      # E0-14: S3 /healthz alone passes before the volume server has registered with the master;
+      # reads then fail with 500 ("volume not found") for 1-2 s. So the check also needs a data node
+      # in the master's /dir/status ("PublicUrl" exists only inside DataNodes entries). The volume
+      # server's own /healthz (8080) is no signal: it passes ~15 s before registration. Both shapes
+      # checked on 4.48; recheck them after a bump (a changed shape fails closed: unhealthy).
+      test:
+        - CMD-SHELL
+        - >-
+          wget -q -O /dev/null http://127.0.0.1:8333/healthz &&
+          wget -q -O - http://127.0.0.1:9333/dir/status | grep -q '"PublicUrl"'
       interval: 10s
       timeout: 3s
       retries: 3
