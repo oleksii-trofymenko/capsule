@@ -49,7 +49,7 @@ Owner decisions (2026-10-27):
  ---------------------------- Home PC (Docker) ---------------------------------
    cloudflared (compose.tunnel.yml, E1-15) --> api:8000 only
                                                |
- [B3] api  (networks: edge + backend; also published on 127.0.0.1:8000 for the host)
+ [B3] api  (networks: edge + backend; also published on 127.0.0.1:${API_HOST_PORT:-8000} for the host)
    |  auth, validation, rate limits, delete/export
    |  network "backend" (internal: true -- no route to host or internet)
    v
@@ -78,11 +78,11 @@ STRIDE: S spoofing, T tampering, R repudiation, I information disclosure, D deni
 
 | # | Threat | STRIDE | Mitigation | Owner |
 | --- | --- | --- | --- | --- |
-| P1 | Token or guest credential read from plain storage, backups, logs or Sentry breadcrumbs | I | Credentials only in `expo-secure-store`, `AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY`, through `shared/storage`. Nothing in MMKV, logs or breadcrumbs. Both stores excluded from OS backup | E1-12 (ADR-003) |
-| P2 | Leftover Keychain items after a reinstall give the next user an old session | I/S | First launch after install wipes secure-store and MMKV | E1-12 |
-| P3 | Logout while offline leaves a live refresh family on the server | S | App wipes locally anyway. Family expires by lifetime (ADR-014). Risk noted on the card | E1-13 |
-| P4 | Man-in-the-middle with a rogue CA on the device | T/I | Cloudflare TLS. Certificate pinning is **accepted risk for E1**: trycloudflare certificates and hostnames rotate, so a pin would break the app. Pinning comes with the named tunnel and domain | Card to be filed for E8 |
-| P5 | Secrets shipped in the app bundle | I | Only non-secret `EXPO_PUBLIC_*` values (API base URL). Bundle scan per blueprint §10 | E1-12, E8 release |
+| P1 | Token or guest credential read from plain storage, backups, logs or Sentry breadcrumbs | I | Credentials only in `expo-secure-store`, `AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY`, through `shared/storage`. Nothing in MMKV, logs or breadcrumbs. Both stores excluded from OS backup | E1-18, E1-12 (ADR-003) |
+| P2 | Leftover Keychain items after a reinstall give the next user an old session | I/S | First launch after install wipes secure-store and MMKV | E1-18, E1-12 |
+| P3 | Logout while offline leaves a live refresh family on the server | S | App wipes locally anyway. **Accepted:** the family stays usable until it expires by lifetime (ADR-014) | E1-13 |
+| P4 | Man-in-the-middle with a rogue CA on the device | T/I | Cloudflare TLS. Certificate pinning is **accepted risk for E1**: trycloudflare certificates and hostnames rotate, so a pin would break the app. Pinning comes with the named tunnel and domain. Deviation from blueprint §10 ("certificate pinning for the API") | E8 named-tunnel card (to be filed: named tunnel, domain, pinning, bundle scan) |
+| P5 | Secrets shipped in the app bundle | I | Only non-secret `EXPO_PUBLIC_*` values (API base URL). Bundle scan per blueprint §10 | E1-12; scan: E8 named-tunnel card (to be filed: named tunnel, domain, pinning, bundle scan) |
 
 ### B2: Cloudflare and tunnel
 
@@ -92,7 +92,7 @@ STRIDE: S spoofing, T tampering, R repudiation, I information disclosure, D deni
 | T2 | Postgres, Redis, SeaweedFS or an admin UI reachable through the tunnel | I/E | cloudflared points at `api:8000` only. A check script proves other targets fail | E1-15 |
 | T3 | Client-IP spoofing with a forged `CF-Connecting-IP` to dodge per-IP limits or poison them | S | Header trusted only when the "behind tunnel" flag is on. Otherwise the socket address is used. Tested. See rule R2 for the peer check | E1-08, E1-15 |
 | T4 | Cloudflare sees plaintext traffic | I | **Accepted.** Cloudflare is a named processor in the Privacy notice | E1-21 |
-| T5 | trycloudflare has no uptime promise and is meant for testing | D | **Accepted for the E1 demo only.** Not used for external beta. Named tunnel in E8 | E8 |
+| T5 | trycloudflare has no uptime promise and is meant for testing | D | **Accepted for the E1 demo only.** Not used for external beta | E8 named-tunnel card (to be filed: named tunnel, domain, pinning, bundle scan) |
 
 ### B3: API
 
@@ -104,7 +104,7 @@ STRIDE: S spoofing, T tampering, R repudiation, I information disclosure, D deni
 | A4 | Refresh-token theft and replay | S | Refresh rotates on every use. A reused token returns 401 and revokes the whole family. Logout revokes the family. Server stores only token hashes | E1-05 (ADR-014) |
 | A5 | Forged or tampered JWT (wrong key, `alg=none`, HS/public-key confusion, expired token) | S/E | Fixed algorithm allow-list, key id, expiry checked. All failures give the same 401 problem document | E1-05 (ADR-014, ADR-015) |
 | A6 | Account enumeration on sign-in | I | Same problem document and similar timing for an unknown email and a wrong password (dummy hash) | E1-07 |
-| A7 | Account enumeration on sign-up | I | **Accepted risk, owner sign-off pending.** flows.md 3a needs an "already registered → offer sign-in" answer, and with no email sending we cannot hide that state. Limited by per-IP sign-up limits | E1-07, E1-08 |
+| A7 | Account enumeration on sign-up | I | **Accepted risk (decided here; owner sign-off pending, and this row changes if the owner rejects it).** flows.md 3a needs an "already registered → offer sign-in" answer, and with no email sending we cannot hide that state. Behaviour E1-07 tests: sign-up with a registered email returns a conflict problem document that offers sign-in, with no other account detail. Limited by per-IP sign-up limits. Revisit when E1-17 adds email | E1-07, E1-08 |
 | A8 | Guest-data takeover during the move to an account | E/T | Move only in the sign-up/sign-in request that presents both a valid, unrevoked guest credential and the new session. One transaction, credential revoked afterwards. Never matched by email, device or analytics id. A revoked or foreign credential moves nothing. Concurrency rule R3 | E1-07 |
 | A9 | Stolen guest credential moved into the attacker's account | I | **Accepted:** same impact as the theft itself (P1, A4) | E1-12 |
 | A10 | Mass assignment and malformed input | T | Pydantic models with unknown fields forbidden, lengths and enums from the contract. Property-based tests over every operation | E1-05, E1-07, E1-06 |
@@ -118,10 +118,10 @@ STRIDE: S spoofing, T tampering, R repudiation, I information disclosure, D deni
 
 | # | Threat | STRIDE | Mitigation | Owner |
 | --- | --- | --- | --- | --- |
-| D1 | Data services reachable from outside | I/E | `backend` network is `internal: true`. Only `api` is published, on 127.0.0.1. SeaweedFS admin listeners bound to loopback, S3 signed, gRPC IAM gated by the filer key | E0-07, E0-14 (done) |
+| D1 | Data services reachable from outside | I/E | `backend` network is `internal: true`. Only `api` is published, on 127.0.0.1 (`API_HOST_PORT`, default 8000). SeaweedFS admin listeners bound to loopback, S3 signed, gRPC IAM gated by the filer key | E0-07, E0-12 (done) |
 | D2 | Personal data survives "Delete my data" | I | Every module registers delete and export handlers. A test fails for any user-data table without one. Server deletion finishes before the response | E1-09 |
 | D3 | Guest data kept past retention | I | Scheduled purge. Left-over count must be 0 after each run (SLO) | E1-10 |
-| D4 | Disk or volume theft exposes emails and hashes | I | **Accepted for E1.** No column encryption yet, and host disk encryption is waiting on the owner (Windows 11 Home has no BitLocker, only Device Encryption where the hardware supports it). SeaweedFS encrypts chunks, but its keys sit on the same disk. Must be fixed before external beta | Card before external beta (to be filed) |
+| D4 | Disk or volume theft exposes emails and hashes | I | **Accepted for E1.** No column encryption yet, and host disk encryption is waiting on the owner (Windows 11 Home has no BitLocker, only Device Encryption where the hardware supports it). SeaweedFS encrypts chunks, but its keys sit on the same disk, which does not yet meet ADR-008 ("a stolen disk must not expose them"); no media exists until E6. Must be fixed before external beta, for media as well as emails and hashes | Card before external beta (to be filed) |
 | D5 | Redis rate-limit keys keep IPs and emails indefinitely | I | Every key has a TTL. Keys are HMAC'd (R1) | E1-08 |
 
 ### B5: Host, operations, CI
@@ -166,7 +166,7 @@ Planned E1 tables (names are set by E1-05/E1-07; the rules hold whatever the fin
 | guest credential record | credential hash, revoked_at | Credential material | Hashed | Never |
 | Redis rate-limit keys | HMAC of IP and email | Yes (pseudonymised) | No | Never |
 | Consultation tables (E3+) | flows.md "Guest data" list | Yes | Decided by the pre-beta encryption card | Never content; counts only |
-| SeaweedFS media (E6) | photos, audio | Yes, highest sensitivity | Chunk encryption, keys on the same disk | Never; not in traces either |
+| SeaweedFS media (E6) | photos, audio | Yes, highest sensitivity | Chunk encryption, keys on the same disk (falls short of ADR-008 until the pre-beta encryption card, D4) | Never; not in traces either |
 
 Rules:
 
@@ -202,7 +202,6 @@ These are listed, not decided.
 - Password rules: minimum length per NIST SP 800-63B, an offline breached-password list or none, no composition rules.
 - Email normalisation (case, Unicode, plus-addressing kept or not).
 - Logout scope: this device or all devices.
-- Sign-up conflict response (A7, owner sign-off pending).
 - JWT and password-hashing libraries (7-day rule).
 
 ### ADR-015 (E1-04)
@@ -220,12 +219,12 @@ These are listed, not decided.
 | # | Rule | Card |
 | --- | --- | --- |
 | R1 | The failed sign-in limit throttles on email + IP and never locks the account (otherwise anyone can lock out a victim). Rate-limit keys use an HMAC of IP or email, never the raw value, and every key has a TTL | E1-08 |
-| R2 | `CF-Connecting-IP` is trusted only when the flag is on **and** the socket peer is the cloudflared container. A direct request to 127.0.0.1:8000 or from another container on `edge` uses the socket address | E1-08 |
+| R2 | `CF-Connecting-IP` is trusted only when the flag is on **and** the socket peer is the cloudflared container. A direct request through the published host port or from another container on `edge` uses the socket address. The cloudflared container's address on `edge` is dynamic and published-port traffic can arrive from the bridge gateway, so E1-08/E1-15 must fix how the peer is identified (for example a dedicated network for cloudflared and api, or a resolved service name), and test it | E1-08, E1-15 |
 | R3 | The guest-data move locks the guest credential row. Two parallel sign-ups or sign-ins with the same credential: one moves, the other moves nothing. Covered by a test | E1-07 |
 | R4 | The uvicorn access log is off or replaced by one that logs no client IP and no query string at INFO | E1-05 |
 | R5 | Token tests include `alg=none`, HS/public-key confusion, unknown `kid` and expired tokens. All return the same 401 | E1-05 |
 | R6 | A retry after a lost refresh response follows the ADR-014 grace rule and is tested in the client and on the server | E1-12, E1-05 |
-| R7 | The quick tunnel is for the E1 demo only, not external beta | E1-15, E8 |
+| R7 | The quick tunnel is for the E1 demo only, not external beta | E1-15, E8 named-tunnel card (to be filed: named tunnel, domain, pinning, bundle scan) |
 | R8 | Rate limit runs before any password hash | E1-08 |
 | R9 | Every new user-data table ships delete and export handlers, and its columns are added to section 6 | All cards from E3 |
-| R10 | Accepted risks in this page (P4, T1, T4, T5, A3, A7, A9, A11, A14, D4) are reviewed at the E1 demo and before external beta | security-engineer |
+| R10 | Accepted risks in this page (P3, P4, T1, T4, T5, A3, A7, A9, A11, A14, D4) are reviewed at the E1 demo and before external beta | security-engineer |
