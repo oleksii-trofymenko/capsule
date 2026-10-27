@@ -1,5 +1,6 @@
 """Guest credential, current principal and last activity against real Postgres (E1-05)."""
 
+import asyncio
 import base64
 import hashlib
 import json
@@ -420,19 +421,26 @@ async def test_slow_touch_is_cut_by_the_statement_timeout(
         guest = await new_guest(client)
         principal = principal_of(guest)
         await _set_inactive(app, principal, "2 hours")
-        async with app.state.engine.begin() as blocker:
+        blocker = await app.state.engine.connect()
+        try:
             # Hold the row lock: the touch waits until its 2 s statement timeout cancels it.
+            await blocker.begin()
             await blocker.execute(
                 text("SELECT 1 FROM principals WHERE id = :id FOR UPDATE"), {"id": principal}
             )
             started = time.perf_counter()
-            response = await client.get(
-                ME, headers={"Authorization": f"Bearer {guest['access_token']}"}
-            )
+            # Without the statement timeout the touch would wait for the lock forever.
+            async with asyncio.timeout(5):
+                response = await client.get(
+                    ME, headers={"Authorization": f"Bearer {guest['access_token']}"}
+                )
             elapsed = time.perf_counter() - started
+        finally:
+            await blocker.rollback()
+            await blocker.close()
 
     assert response.status_code == 200
-    assert 1.5 < elapsed < 5
+    assert elapsed > 1.5
     lines = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
     failed = [line for line in lines if line["msg"] == "last activity update failed"]
     assert [line["error"] for line in failed] == ["OperationalError"]
