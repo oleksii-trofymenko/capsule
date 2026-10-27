@@ -13,10 +13,11 @@ from core.errors import install_problem_handlers
 from core.logging import configure_logging
 from core.middleware import RequestContextMiddleware
 from core.redis_client import create_redis
+from core.signing_keys import load_signing_keys
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
-    settings = settings or Settings.from_env(os.environ)
+    settings = settings or Settings.from_env(os.environ, signing_keys=load_signing_keys())
     configure_logging(settings.log_level)
 
     @asynccontextmanager

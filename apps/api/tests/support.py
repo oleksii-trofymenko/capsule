@@ -12,12 +12,15 @@ import yaml
 from alembic.config import Config
 from fastapi import FastAPI
 from jsonschema import Draft202012Validator
+from pydantic import SecretBytes
 
-from core.config import Settings
+from core.config import Settings, SigningKey
 
 CONTRACT_PATH = Path(__file__).resolve().parents[3] / "contracts" / "openapi.yaml"
 ALEMBIC_INI = Path(__file__).resolve().parents[1] / "alembic.ini"
 REQUEST_ID = re.compile(r"[A-Za-z0-9-]{1,64}")
+# In memory, like the file `make up` writes; never a real key.
+TEST_SIGNING_KEYS = (SigningKey("test-current", SecretBytes(bytes(range(32)))),)
 
 
 def dummy_settings(**overrides: object) -> Settings:
@@ -25,6 +28,7 @@ def dummy_settings(**overrides: object) -> Settings:
     values: dict[str, object] = {
         "database_url": "postgresql://capsule:dummy@db.invalid:5432/capsule",
         "redis_url": "redis://cache.invalid:6379/0",
+        "signing_keys": TEST_SIGNING_KEYS,
     }
     return Settings.model_validate(values | overrides)
 

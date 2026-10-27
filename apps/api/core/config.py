@@ -1,10 +1,18 @@
 """One settings object, read from environment variables. `.env.example` lists every variable."""
 
 from collections.abc import Mapping
-from typing import Literal
+from typing import Literal, NamedTuple
 from urllib.parse import urlsplit
 
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, ValidationError, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    SecretBytes,
+    SecretStr,
+    ValidationError,
+    field_validator,
+)
 
 _PG_SCHEMES = {"postgres", "postgresql", "postgresql+psycopg"}
 _REDIS_SCHEMES = {"redis", "rediss"}
@@ -22,6 +30,13 @@ ENV_VARS: dict[str, str] = {
 
 class ConfigError(Exception):
     """Invalid or missing settings. The message never contains the rejected values."""
+
+
+class SigningKey(NamedTuple):
+    """One JWT signing key (ADR-014). Loaded by `core.signing_keys`, never from the environment."""
+
+    kid: str
+    key: SecretBytes
 
 
 def normalise_database_url(url: str) -> str:
@@ -61,6 +76,8 @@ class Settings(BaseModel):
     # Client timeouts for normal traffic. libpq takes whole seconds.
     database_connect_timeout_s: int = Field(default=5, ge=1, le=60)
     redis_socket_timeout_s: float = Field(default=5.0, gt=0, le=60)
+    # ADR-015 rotation: the first key signs; the second, if any, only verifies.
+    signing_keys: tuple[SigningKey, ...] = Field(min_length=1, max_length=2)
 
     @field_validator("database_url", mode="before")
     @classmethod
@@ -78,9 +95,23 @@ class Settings(BaseModel):
                 raise ValueError("must be redis://host or rediss://host")
         return value
 
+    @property
+    def signing_key(self) -> SigningKey:
+        return self.signing_keys[0]
+
+    def verification_key(self, kid: str) -> SecretBytes | None:
+        """Exact `kid` match, no fallback key (ADR-014)."""
+        return next((k.key for k in self.signing_keys if k.kid == kid), None)
+
     @classmethod
-    def from_env(cls, environ: Mapping[str, str]) -> "Settings":
-        values = {field: environ[var] for field, var in ENV_VARS.items() if var in environ}
+    def from_env(
+        cls, environ: Mapping[str, str], *, signing_keys: tuple[SigningKey, ...]
+    ) -> "Settings":
+        """`signing_keys` come from a file, not the environment (`core.signing_keys`)."""
+        values: dict[str, object] = {
+            field: environ[var] for field, var in ENV_VARS.items() if var in environ
+        }
+        values["signing_keys"] = signing_keys
         try:
             return cls.model_validate(values)
         except ValidationError as exc:
