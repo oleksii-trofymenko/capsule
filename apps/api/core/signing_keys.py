@@ -14,7 +14,8 @@ from core.config import ConfigError, SigningKey
 SIGNING_KEYS_PATH = Path("/run/secrets/jwt_signing_keys")
 MIN_KEY_BYTES = 32  # ADR-014
 MAX_KEYS = 2  # the current key and at most one previous key (ADR-015 rotation)
-_KID = re.compile(r"[A-Za-z0-9._-]{1,32}")  # short: a whole hex key never passes as a kid
+# ADR-015: the UTC creation date, `-N` for another key that day. A key can never pass as one.
+_KID = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}(-[0-9]{1,2})?")
 _HEX = re.compile(r"[0-9a-fA-F]+")
 
 
@@ -32,7 +33,8 @@ def parse_signing_keys(text: str, source: str) -> tuple[SigningKey, ...]:
         if not _KID.fullmatch(kid):
             # The kid is not echoed: a malformed line may be a pasted key.
             raise ConfigError(
-                f"Invalid signing keys: {where}: kid must be 1-32 of A-Z a-z 0-9 . _ -"
+                f"Invalid signing keys: {where}: kid must be a date like 2026-10-27, "
+                "with -N for another key that day"
             )
         if any(k.kid == kid for k in keys):
             raise ConfigError(f"Invalid signing keys: {where}: duplicate kid {kid}")

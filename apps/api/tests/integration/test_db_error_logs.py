@@ -41,7 +41,9 @@ def _line(msg: str, args: tuple[object, ...] | None, exc: BaseException | None) 
 def test_unique_violation_as_exc_info(violation: IntegrityError) -> None:
     line = _line("insert failed", None, violation)
 
-    assert json.loads(line)["exc"] == EXPECTED
+    exc = json.loads(line)["exc"]
+    assert exc.split("\n")[0] == EXPECTED
+    assert "test_db_error_logs.py" in exc  # where it was raised is kept
     assert PII not in line
     assert "DETAIL" not in line
 

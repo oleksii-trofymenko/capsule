@@ -76,8 +76,9 @@ class Settings(BaseModel):
     # Client timeouts for normal traffic. libpq takes whole seconds.
     database_connect_timeout_s: int = Field(default=5, ge=1, le=60)
     redis_socket_timeout_s: float = Field(default=5.0, gt=0, le=60)
-    # ADR-015 rotation: the first key signs; the second, if any, only verifies.
-    signing_keys: tuple[SigningKey, ...] = Field(min_length=1, max_length=2)
+    # ADR-015 rotation: the first key signs; the second, if any, only verifies. Empty for
+    # processes that hold no signing secret (the worker); create_app refuses to start without.
+    signing_keys: tuple[SigningKey, ...] = Field(default=(), max_length=2)
 
     @field_validator("database_url", mode="before")
     @classmethod
@@ -105,7 +106,7 @@ class Settings(BaseModel):
 
     @classmethod
     def from_env(
-        cls, environ: Mapping[str, str], *, signing_keys: tuple[SigningKey, ...]
+        cls, environ: Mapping[str, str], *, signing_keys: tuple[SigningKey, ...] = ()
     ) -> "Settings":
         """`signing_keys` come from a file, not the environment (`core.signing_keys`)."""
         values: dict[str, object] = {

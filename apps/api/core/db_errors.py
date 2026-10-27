@@ -2,6 +2,7 @@
 which can quote row values (`DETAIL: Key (email)=(...) already exists`), the statement or its
 parameters. Only the exception type, SQLSTATE and constraint name."""
 
+import traceback
 from collections.abc import Iterator
 
 import psycopg
@@ -36,7 +37,8 @@ def exception_chain(exc: BaseException) -> Iterator[BaseException]:
         yield current
         if isinstance(current, BaseExceptionGroup):
             stack.extend(reversed(current.exceptions))
-        stack.extend(e for e in (current.__context__, current.__cause__) if e is not None)
+        links = (current.__context__, current.__cause__, getattr(current, "orig", None))
+        stack.extend(e for e in links if isinstance(e, BaseException))
 
 
 def involves_db_error(exc: BaseException) -> bool:
@@ -49,3 +51,13 @@ def describe_chain(exc: BaseException) -> str:
     chain = list(exception_chain(exc))
     wrapped = {id(e.orig) for e in chain if isinstance(e, DBAPIError) and e.orig is not None}
     return " <- ".join(describe_db_error(e) for e in chain if id(e) not in wrapped)
+
+
+def describe_chain_with_frames(exc: BaseException) -> str:
+    """`describe_chain` plus where each exception was raised: file, line, function and source
+    line from `extract_tb`, never an exception message or a local value."""
+    lines = [describe_chain(exc)]
+    for e in exception_chain(exc):
+        lines.append(f"{type(e).__name__} raised at:")
+        lines.extend(traceback.format_list(traceback.extract_tb(e.__traceback__)))
+    return "\n".join(line.rstrip("\n") for line in lines)

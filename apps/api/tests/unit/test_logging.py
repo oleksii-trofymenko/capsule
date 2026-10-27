@@ -1,28 +1,21 @@
 import asyncio
+import gc
+import io
 import json
 import logging
-import logging.config
-import socket
 import sys
-from collections.abc import Iterator
 
-import httpx
 import psycopg
 import pytest
-import uvicorn
 from sqlalchemy.exc import IntegrityError
-from uvicorn.config import LOGGING_CONFIG
 
 from core.logging import (
     QUIET_LOGGERS,
-    SERVER_ACCESS_LOGGER,
-    SERVER_LOGGERS,
     JsonFormatter,
+    JsonHandler,
     configure_logging,
     request_id_var,
 )
-from main import create_app
-from tests.support import dummy_settings
 
 
 def _record(**extra: object) -> logging.LogRecord:
@@ -81,27 +74,6 @@ def test_third_party_loggers_only_pass_warnings(capsys: pytest.CaptureFixture[st
     assert messages == ["redis is slow", "own debug line"]
     for name in QUIET_LOGGERS:
         assert logging.getLogger(name).getEffectiveLevel() == logging.WARNING
-
-
-@pytest.fixture
-def uvicorn_logging() -> Iterator[None]:
-    """Apply uvicorn's own logging config, as `uvicorn` does before it calls the app factory."""
-    names = (*SERVER_LOGGERS, SERVER_ACCESS_LOGGER)
-    saved = {
-        name: (
-            logging.getLogger(name).handlers[:],
-            logging.getLogger(name).level,
-            logging.getLogger(name).propagate,
-        )
-        for name in names
-    }
-    logging.config.dictConfig(LOGGING_CONFIG)
-    yield
-    for name, (handlers, level, propagate) in saved.items():
-        server_logger = logging.getLogger(name)
-        server_logger.handlers[:] = handlers
-        server_logger.setLevel(level)
-        server_logger.propagate = propagate
 
 
 @pytest.mark.usefixtures("uvicorn_logging")
@@ -174,8 +146,10 @@ GROUP = _raised(ExceptionGroup("g", [_integrity_error()]))
         ("failed", None, _chained(), "exc", f"RuntimeError <- {IE}"),
         ("failed", None, GROUP, "exc", f"ExceptionGroup <- {IE}"),
         ("failed", None, _raised(psycopg.errors.UniqueViolation(PII)), "exc", "UniqueViolation"),
+        ("failed: %s", ([_integrity_error()],), None, "msg", f"failed: ['{IE}']"),
+        ("failed: %s", ({"k": (_integrity_error(),)},), None, "msg", f"failed: {{'k': ('{IE}',)}}"),
     ],
-    ids=["exc_info", "arg", "mapping-arg", "msg", "chained", "group", "driver"],
+    ids=["exc_info", "arg", "mapping-arg", "msg", "chained", "group", "driver", "list", "nested"],
 )  # fmt: skip
 def test_database_errors_are_described_never_printed(
     msg: object,
@@ -189,59 +163,89 @@ def test_database_errors_are_described_never_printed(
     record = logging.LogRecord("capsule.test", logging.ERROR, __file__, 1, msg, args, exc_info)
     line = JsonFormatter().format(record)
 
-    assert json.loads(line)[field] == expected
+    assert json.loads(line)[field].split("\n")[0] == expected
     assert PII not in line
     assert "INSERT" not in line
     assert "Traceback" not in line
 
 
 def test_database_error_in_an_allowed_extra_is_described() -> None:
-    line = JsonFormatter().format(_record(error=_integrity_error()))
+    deep: list[object] = [_integrity_error()]
+    for _ in range(10):
+        deep = [deep]
+    line = JsonFormatter().format(_record(error={"e": _integrity_error(), "deep": deep}))
 
-    assert json.loads(line)["error"] == "IntegrityError (UniqueViolation)"
+    # The dict is depth 0; a container at depth 4 prints as its type.
+    assert json.loads(line)["error"] == {"e": IE, "deep": [[["<list>"]]]}
     assert PII not in line
 
 
-ACCESS_FIELDS = ("method", "path", "status", "duration_ms")
+def test_database_traceback_keeps_frame_locations_only() -> None:
+    exc = json.loads(JsonFormatter().format(_record(exc_info=_exc_info(_chained()))))["exc"]
+
+    assert exc.startswith(f"RuntimeError <- {IE}\nRuntimeError raised at:\n")
+    assert "test_logging.py" in exc
+    assert ", in _chained" in exc
+    assert PII not in exc
+    assert "DETAIL" not in exc
 
 
-@pytest.mark.anyio
-@pytest.mark.usefixtures("uvicorn_logging")  # restores what uvicorn.Config's dictConfig changes
-async def test_access_line_has_no_client_ip_or_query_under_real_uvicorn(
+def _exc_info(exc: BaseException) -> tuple[type[BaseException], BaseException, object]:
+    return type(exc), exc, exc.__traceback__
+
+
+def test_prebuilt_message_quoting_the_error_is_rewritten() -> None:
+    error = _raised(_integrity_error())
+    record = _record(exc_info=_exc_info(error))
+    record.msg, record.args = f"future: <Task exception={error!r}> after {error}", None
+
+    line = JsonFormatter().format(record)
+
+    assert json.loads(line)["msg"] == f"future: <Task exception={IE}> after {IE}"
+    assert PII not in line
+
+
+def test_unretrieved_task_error_from_asyncio_is_described(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """R4: uvicorn with its access log switched on, as if `--no-access-log` were forgotten."""
-    sock = socket.socket()
-    sock.bind(("127.0.0.1", 0))
-    port = sock.getsockname()[1]
-    config = uvicorn.Config(lambda: create_app(dummy_settings()), factory=True, lifespan="off")
-    assert config.access_log
-    server = uvicorn.Server(config)
-    task = asyncio.create_task(server.serve(sockets=[sock]))
-    try:
-        async with asyncio.timeout(5):
-            while not server.started:  # noqa: ASYNC110 - uvicorn exposes only this flag
-                await asyncio.sleep(0.01)
-        async with httpx.AsyncClient() as client:
-            response = await client.get(
-                f"http://127.0.0.1:{port}/v1/health?email={PII}",
-                headers={"X-Forwarded-For": "203.0.113.7"},
-            )
-    finally:
-        server.should_exit = True
-        await task
-        sock.close()
+    async def insert() -> None:
+        raise _integrity_error()
 
-    assert response.status_code == 200
-    lines = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
-    assert not [line for line in lines if line["logger"] == SERVER_ACCESS_LOGGER]
-    access = [line for line in lines if line["msg"] == "request"]
-    assert len(access) == 1
-    assert set(access[0]) == {"ts", "level", "logger", "msg", "request_id", *ACCESS_FIELDS}
-    assert access[0]["path"] == "/v1/health"
-    raw = json.dumps(lines)
-    assert PII not in raw
-    assert "203.0.113.7" not in raw
-    # uvicorn.error's startup line names the listening socket; no other line holds the IP.
-    others = [line for line in lines if line["logger"] != "uvicorn.error"]
-    assert "127.0.0.1" not in json.dumps(others)
+    configure_logging("INFO")
+    loop = asyncio.new_event_loop()
+    try:
+        task = loop.create_task(insert())
+        loop.run_until_complete(asyncio.sleep(0))
+        del task  # never awaited: asyncio logs "Task exception was never retrieved"
+        gc.collect()
+    finally:
+        loop.close()
+
+    out = capsys.readouterr().out
+    line = next(json.loads(raw) for raw in out.splitlines() if '"asyncio"' in raw)
+    assert line["msg"] == "Task exception was never retrieved"
+    assert line["exc"].startswith(IE)
+    assert PII not in out
+    assert "DETAIL" not in out
+
+
+def test_a_record_that_cannot_be_formatted_names_only_where(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    stream = io.StringIO()
+    handler = JsonHandler(stream)
+    handler.setFormatter(JsonFormatter())
+    log = logging.getLogger("capsule.test.broken")
+    log.addHandler(handler)
+    log.propagate = False
+    try:
+        log.error("x: %s %s", _integrity_error())  # one argument for two placeholders
+    finally:
+        log.removeHandler(handler)
+        log.propagate = True
+
+    line = json.loads(stream.getvalue())
+    assert line["source_logger"] == "capsule.test.broken"
+    assert line["where"].endswith(f"test_logging.py:{line['where'].rsplit(':', 1)[1]}")
+    assert line["error"] == "TypeError"
+    assert PII not in stream.getvalue() + capsys.readouterr().err

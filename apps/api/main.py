@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from core import health
-from core.config import Settings
+from core.config import ConfigError, Settings
 from core.db import create_engine
 from core.errors import install_problem_handlers
 from core.logging import configure_logging
@@ -18,6 +18,8 @@ from core.signing_keys import load_signing_keys
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or Settings.from_env(os.environ, signing_keys=load_signing_keys())
+    if not settings.signing_keys:
+        raise ConfigError("Invalid settings: no JWT signing keys")
     configure_logging(settings.log_level)
 
     @asynccontextmanager

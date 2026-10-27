@@ -20,7 +20,7 @@ CONTRACT_PATH = Path(__file__).resolve().parents[3] / "contracts" / "openapi.yam
 ALEMBIC_INI = Path(__file__).resolve().parents[1] / "alembic.ini"
 REQUEST_ID = re.compile(r"[A-Za-z0-9-]{1,64}")
 # In memory, like the file `make up` writes; never a real key.
-TEST_SIGNING_KEYS = (SigningKey("test-current", SecretBytes(bytes(range(32)))),)
+TEST_SIGNING_KEYS = (SigningKey("2026-01-01", SecretBytes(bytes(range(32)))),)
 
 
 def dummy_settings(**overrides: object) -> Settings:
