@@ -39,6 +39,38 @@ The body lists the dependencies that are `failing`.
 - `make up` adds any secret that `.env.example` has and `.env` lacks (for example after an upgrade) with a fresh random value. It never changes existing values.
 - Lost `.env` and no data to keep: reset (below).
 
+## Secrets (`secrets/`, ADR-015, E1-05b)
+
+Application secrets are files in the gitignored repo-root `secrets/`, not variables in `.env`. Today there is one: `secrets/jwt_signing_keys`, mounted only into `api` at `/run/secrets/jwt_signing_keys`. `make up` (`infra/compose/env-init.sh`) creates it if missing, never overwrites it, and applies the layout on every run. Any failure stops `make up`. Rotation: `key-rotation.md`. A leaked or lost key: `secret-leak.md`.
+
+Expected layout, and how to check it without printing values:
+
+- **Git Bash:** `secrets/` and `.env` are readable only by you and SYSTEM. There is no inheritance and no Administrators entry. Check with `MSYS2_ARG_CONV_EXCL='*' icacls secrets` and `icacls .env`. You should see two lines, `NT AUTHORITY\SYSTEM` and your user. On `secrets/` both have `(OI)(CI)(F)`, and the file shows `(I)(F)` for both. Inside the container the file appears as `root 0777`, so the host ACL is the only barrier.
+- **Linux:** `secrets/` is `0700` and owned by you. The key file is `root:10001 0440` (10001 = the api image's group). Check with `stat -c '%n %U:%g %a' secrets secrets/jwt_signing_keys`. Reading or editing it needs `sudo`.
+- **Both:** `$C exec -T api test -r /run/secrets/jwt_signing_keys && echo ok` while the stack runs.
+
+`make up` fails in env-init:
+
+- `secrets/jwt_signing_keys exists but is not a regular file`: the stack was started while the file was missing, and Docker created an empty folder at that path. This happens with `docker compose up` without `make up`, or after deleting `secrets/` while the stack ran. Run `$C down`, then `rmdir secrets/jwt_signing_keys` (Linux: `sudo rmdir`, because Docker created it as root), then `make up`. A new key is generated. If an old key existed, follow `secret-leak.md` (lost key).
+- `unexpected user SID from whoami.exe /user` or `whoami.exe /user failed`: run `"$(cygpath -u "$SYSTEMROOT")/System32/whoami.exe" /user /fo csv /nh` yourself. A local or Microsoft account prints a SID starting with `S-1-5-21-`. Run `make up` as that normal user, not from an elevated shell under another account.
+- `icacls on secrets/ failed` (or on `.env`): the error line above it comes from icacls. Usually the repo sits on a drive without ACLs (FAT/exFAT, network share) or in a synced folder. Move the repo to a local NTFS folder outside OneDrive. A synced folder is an ADR-015 "revisit" trigger. You can always reset the ACL on folders you own: `MSYS2_ARG_CONV_EXCL='*' icacls secrets /reset /T`, then `make up` again.
+- `... must be root:10001 mode 0440; that needs sudo (or root), which is missing`: on a Linux host without sudo, run the two commands it prints as root once. Later `make up` runs see the right owner and skip sudo.
+- `chmod 700 secrets/ failed`: `secrets/` belongs to another user, for example after running `sudo make up`. Fix it with `sudo chown "$(id -u):$(id -g)" secrets`, and never run `make up` with sudo.
+- `no secrets layout for <OS>`: only Git Bash on Windows and Linux are supported (ADR-015). macOS needs an ADR-015 change first.
+
+Other cases:
+
+- `git clean -fdx`, a reset or a new clone deletes `secrets/`. The next `make up` creates a new key. Every access token then fails once and clients refresh silently. Nothing else is lost, because the JWT key has no off-host copy by design.
+- `api` cannot read the file (the CI step `api reads its file secret`, or E1-05's startup error): check the layout above. If `apps/api/Dockerfile` changed the group id from 10001, update `API_GID` in `env-init.sh` and the ADR-015 inventory together.
+- To reset the stack's secrets on a dev machine: `$C down`, `rm -rf secrets` (Linux: `sudo rm -rf secrets`), then `make up`.
+
+CI `stack` job steps for secrets (throwaway values, deleted in `Tear down`):
+
+- `Throwaway secrets`: env-init runs with `generate-only`. Then every `.env` value and each key line in `secrets/` is masked on its own. `no masking rule for secrets/<file>` means a new secret file needs its masking rule in this step (same PR). `is not kid=<64 hex>` or `has no key lines` means env-init wrote a broken key file. Reproduce it on a temp copy: `d=$(mktemp -d); cp .env.example "$d/"; bash infra/compose/env-init.sh "$d" generate-only; awk -F= '{print $1, length($2)}' "$d/secrets/jwt_signing_keys"; rm -rf "$d"`. It must print the date and `64`.
+- `Secrets layout (sudo)`: env-init's Linux layout did not take effect. `the runner can still read` means the chown/chmod did not run. Read the `stat` line above it.
+- `api reads its file secret`: the secret is not mounted, or its owner or mode is wrong for uid 10001. See "Other cases" above.
+- `a generated secret appears in the stack logs` (inside the restart step, or the step after it): a code path logged a key value. Find it with `$C logs` in a local stack, but do not paste the value. Fix the code. Then follow `secret-leak.md` for any real key that went through the same path.
+
 ## CI fails in `check-pins.sh`
 
 An image pin in `.github/workflows/ci.yml`, `infra/compose/compose.base.yml` or `apps/api/Dockerfile` changed without the others. Make the Postgres/Redis references (tag and digest) and the uv version identical in the same PR.
