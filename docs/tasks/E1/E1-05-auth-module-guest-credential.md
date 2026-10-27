@@ -37,7 +37,7 @@ As a guest, I want to use Capsule straight away without creating an account, so 
   - [ ] Happy, failure and edge paths, including two concurrent refreshes with the same token.
 - [ ] Every new query ships `EXPLAIN ANALYZE` output in the PR.
 - [ ] Tell the Orchestrator: the refresh endpoint is the first one that takes user input, which triggers E1-06.
-- [ ] ADR-015: `env-init.sh` creates `secrets/jwt_signing_keys` (`kid=hex`, 32 random bytes) if missing and on every `make up` applies the layout (Git Bash: `icacls` user + SYSTEM with (OI)(CI), Administrators removed; Linux: `root:10001` 0440 via sudo), failing `make up` on any non-zero exit; the file is mounted into `api` only and `api` refuses to start with zero or more than two keys; CI masks each key value separately, fails if one appears in stack logs, and `docker compose config --quiet` passes in the lint job with no `secrets/` files present.
+- [ ] ADR-015: `env-init.sh` creates `secrets/jwt_signing_keys` (`kid=hex`, 32 random bytes) if missing and on every `make up` applies the layout (Git Bash: `icacls` user + SYSTEM with (OI)(CI), Administrators removed; Linux: `root:10001` 0440 via sudo), failing `make up` on any non-zero exit; the file is mounted into `api` only and `api` refuses to start with zero or more than two keys; CI masks each key value separately before applying the layout (after it, the runner reads the files only with `sudo`), fails if one appears in stack logs, and `docker compose config --quiet` passes in the lint job with no `secrets/` files present.
 
 ## Allowed files
 
