@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | todo |
+| Status | review |
 | Owner | backend-engineer |
 | Reviewers | code-reviewer, security-engineer |
 | Estimate | S |
@@ -42,5 +42,16 @@ The auth core (E1-05, E1-05c) needs the JWT signing keys loaded and checked at s
 - Decisions:
   - Filed 2026-10-27: split from E1-05 (plan estimate ~1,450 lines for the whole card).
   - 2026-10-27: no `JWT_SIGNING_KEYS_FILE` setting; the path is fixed by ADR-015 (no config the card does not need).
+  - 2026-10-27 (build, PR #31): keys are `SecretBytes` (binary), which meets ADR-015's "`SecretStr`" intent: masked in repr and JSON. `kid` must match the ADR-015 date format `YYYY-MM-DD(-N)`, so hex can never pass as a kid and be echoed. `Settings.signing_keys` defaults to `()` so the E1-10 worker can build Settings with no key file; `create_app` and `signing_key` refuse zero keys.
+  - 2026-10-27 (review, code-reviewer and security-engineer approved after two fix rounds):
+    - M1: messages built by libraries (asyncio "Task exception was never retrieved") had DETAIL in `msg`. Now the str/repr of each DB error in the chain is replaced in one pass (longest first), and with a DB `exc_info` the message keeps only its first line.
+    - L1/N2: DB errors inside containers (values and keys, depth 8) and in finished Task/Future arguments are described; other arguments pass through unchanged.
+    - L2: `JsonHandler.handleError` writes one JSON line (logger, where, error type, ts, request_id), never the message or arguments.
+    - CR3: DB-error tracebacks keep frame locations (`traceback.format_list`, no locals, no exception text).
+    - R4 test moved to integration (it opens a socket).
+    - L3 (Ruff logging rules) moved to E1-31. The PR is ~915 changed lines, over the ~400 guide; mostly tests and review hardening, accepted by the Orchestrator.
 - Numbers:
 - Left for later:
+  - E2 Sentry card: turn off frame locals (`include_local_variables`) or scrub `text`, `raw`, `hex_key`; the key loader's locals hold the key file.
+  - E1-05: any entry point other than `create_app` that signs tokens needs the same zero-key check; a non-string `kid` header is rejected before lookup.
+  - Text a caller formats itself, and objects embedding an exception in their own `repr`, are not caught (E1-31 adds the lint).
