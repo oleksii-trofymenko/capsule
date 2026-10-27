@@ -38,6 +38,7 @@ As a guest, I want to use Capsule straight away without creating an account, so 
   - [ ] Happy, failure and edge paths, including two concurrent refreshes with the same token.
 - [ ] Every new query ships `EXPLAIN ANALYZE` output in the PR.
 - [ ] Tell the Orchestrator: the refresh endpoint is the first one that takes user input, which triggers E1-06.
+- [ ] ADR-015: `env-init.sh` creates `secrets/jwt_signing_keys` (`kid=hex`, 32 random bytes) if missing and on every `make up` applies the layout (Git Bash: `icacls` user + SYSTEM with (OI)(CI), Administrators removed; Linux: `root:10001` 0440 via sudo), failing `make up` on any non-zero exit; the file is mounted into `api` only and `api` refuses to start with zero or more than two keys; CI masks each key value separately before applying the layout (after it, the runner reads the files only with `sudo`), fails if one appears in stack logs, and `docker compose config --quiet` passes in the lint job with no `secrets/` files present.
 
 ## Allowed files
 
@@ -45,6 +46,7 @@ As a guest, I want to use Capsule straight away without creating an account, so 
 - `apps/api/modules/auth/**`, `apps/api/core/**`, `apps/api/migrations/**`, `apps/api/main.py`, `apps/api/pyproject.toml`, `apps/api/uv.lock`, `apps/api/alembic.ini`
 - `apps/api/tests/**`
 - `infra/compose/env-init.sh`, `infra/compose/test.env` (key variables only), `infra/compose/compose.base.yml` (`postgres` service `command` only)
+- ADR-015: `.env.example` (comment pointing to `secrets/` only); `infra/compose/compose.base.yml` (top-level `secrets:` block and the `secrets:` list of `api` only); `.github/workflows/ci.yml` (`stack` job: sudo layout step, per-value masking of `secrets/`, leaked-value log check only); `docs/runbooks/secret-leak.md` (new), `docs/runbooks/key-rotation.md` (new; JWT section)
 
 ## Out of scope
 
