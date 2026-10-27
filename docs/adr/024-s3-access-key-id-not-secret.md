@@ -31,7 +31,10 @@ The S3 access key ID is treated as an identifier, not secret material, for one p
 
 - Everything else in ADR-015 is unchanged. The ID stays in `.env`, stays masked in CI (`::add-mask::`), and stays in the leak-pattern file. Every other value has no exception.
 - The access key ID must never be reused as secret material: not as a seed, a salt, a key prefix or part of any other secret.
-- The filter is the `adr024` regex in `.github/workflows/ci.yml` (job `stack`, `leak-check.sh`). Its self-test proves that a non-seaweedfs line carrying the same message is still caught.
+- The filter is the `adr024` regex in `.github/workflows/ci.yml` (job `stack`, `leak-check.sh`).
+  - It matches the full line shape, from the `seaweedfs-N  | ` prefix to the end of the line: `name=admin-<8 hex>, accessKey=<48 lowercase hex>`.
+  - It fails closed. A line with appended text (for example a second value after the ID) or reworded text is not dropped, so any generated value in it fails CI.
+  - Its self-test must catch three lines: the same message from another service, the real line with text appended, and a reworded line.
 
 ## Consequences
 

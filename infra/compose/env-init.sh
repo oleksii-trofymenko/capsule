@@ -100,15 +100,17 @@ acl_check() {
   fi
   sddl=$(tr -d '\000\r' <"$out" | sed -n 2p)
   rm -f "$out"
-  [[ $sddl == *D:* ]] || die "could not read the access list of $name"
-  sddl=${sddl#*D:}
+  # The whole line must be a DACL of plain allow (A) or deny (D) entries: no other ACE type, no
+  # nested parentheses (conditional ACEs), nothing after the last entry. Anything else fails closed.
+  local shape='^D:[A-Z]*(\((A|D);[^()]*\))+$'
+  [[ $sddl =~ $shape ]] || die "unexpected access list format for $name (only allow/deny entries are accepted)"
   while IFS= read -r ace; do
     trustee=$(cut -d';' -f6 <<<"$ace")
     case $trustee in
       SY | S-1-5-18 | "$sid") n=$((n + 1)) ;;
       *) die "$name also grants access to '$trustee'; expected only the current user and SYSTEM" ;;
     esac
-  done < <(grep -o '([^)]*)' <<<"${sddl%%S:*}" | tr -d '()')
+  done < <(grep -o '([^)]*)' <<<"${sddl#D:}" | tr -d '()')
   [ "$n" -gt 0 ] || die "$name has an empty access list"
 }
 

@@ -382,9 +382,11 @@ jobs:
           [ -s "$p" ] || { echo "::error::leak patterns file is missing or empty"; exit 1; }
           # ADR-024: the one exception. SeaweedFS logs the S3 access key ID (an identifier, not a
           # secret) in its startup line; only that line, only from the seaweedfs service, is dropped.
-          # The ID anywhere else still fails. A changed message is not dropped, so CI fails closed.
-          # SeaweedFS 4.48 writes `auth_credentials.go:582 Added ...` (no `]`); `\]?` also takes glog's.
-          adr024='^seaweedfs-[0-9]+ +\| .*auth_credentials\.go:[0-9]+\]? Added admin identity from AWS environment variables: '
+          # The ID anywhere else still fails. The full line shape is matched (name = first 8 hex of the
+          # ID, the ID = 48 lowercase hex from env-init, end of line), so appended or reworded text is
+          # not dropped and CI fails closed. SeaweedFS 4.48 writes `auth_credentials.go:582 Added ...`
+          # (no `]`); `\]?` also takes the standard glog form.
+          adr024='^seaweedfs-[0-9]+ +\| [^|]*auth_credentials\.go:[0-9]+\]? Added admin identity from AWS environment variables: name=admin-[0-9a-f]{8}, accessKey=[0-9a-f]{48}$'
           # scan: reads logs on stdin; exit 0 = a generated value found, 1 = none, 2+ = error.
           scan() {
             local kept rc=0
@@ -392,9 +394,17 @@ jobs:
             [ "$rc" -le 1 ] || return 2
             grep -qFf "$p" <<< "$kept"
           }
-          # Control: a non-seaweedfs line carrying the ADR-024 message and the first pattern must hit.
-          scan <<< "api-1  | auth_credentials.go:1 Added admin identity from AWS environment variables: $(head -n1 "$p")" ||
-            { echo "::error::leak grep self-test did not match"; exit 1; }
+          # Controls, each must hit (nothing is printed): the ADR-024 message from another service;
+          # the real seaweedfs line with text appended; a reworded seaweedfs line.
+          first=$(head -n1 "$p")
+          msg='auth_credentials.go:582 Added admin identity from AWS environment variables: name=admin-00000000, accessKey='
+          z48=000000000000000000000000000000000000000000000000
+          for control in "api-1  | I1027 $msg$first" \
+            "seaweedfs-1  | I1027 $msg$z48, extra=$first" \
+            "seaweedfs-1  | I1027 auth_credentials.go:582 Added admin identity from env: $first"; do
+            scan <<< "$control" || { echo "::error::leak grep self-test did not match"; exit 1; }
+          done
+          unset first control
           # A variable, not a pipe: with pipefail, `grep -q` closing the pipe early hides a hit.
           logs=$($COMPOSE logs --no-color)
           rc=0
