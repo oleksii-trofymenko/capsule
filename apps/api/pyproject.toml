@@ -10,6 +10,7 @@ dependencies = [
   "psycopg[binary]>=3.3.6,<4",        # ADR-007, ADR-009 (one driver for SQLAlchemy and LangGraph)
   "redis>=8.1,<9",                    # ADR-006
   "uvicorn>=0.54,<1",                 # ADR-021: ASGI server (no [standard] extras)
+  "alembic>=1.20.0,<1.21",            # ADR-007: schema migrations
 ]
 
 [dependency-groups]

@@ -5,6 +5,7 @@
 | Service | What it is for | How to reach it | Data | Alert |
 | --- | --- | --- | --- | --- |
 | `api` | FastAPI app (`apps/api`), served by uvicorn (ADR-021) | `http://127.0.0.1:${API_HOST_PORT:-8000}` from the host: `/v1/health` (liveness), `/v1/ready` (Postgres + Redis) | none | none yet (observability epic, E2) |
+| `migrate` | One-shot `alembic upgrade head` (ADR-007), api image; `api` starts only after it exits 0. Shows as `Exited (0)` afterwards; no health check on purpose | no port; `docker compose -p capsule logs migrate`; revision: runbook "Migrations" | none (writes the schema in `postgres`) | none yet (E2); a failure stops `make up` |
 | `postgres` | PostgreSQL 16 + pgvector, the only database (ADR-007) | inside the stack as `postgres:5432`; from the host: `docker compose -p capsule exec postgres psql -U capsule capsule` | volume `capsule_pg_data` | none yet (E2) |
 | `redis` | Queue, cache, rate limits (ADR-006); AOF, `volatile-lru`, password | inside the stack as `redis:6379`; from the host: `docker compose -p capsule exec redis redis-cli` (`REDISCLI_AUTH` is set) | volume `capsule_redis_data` | none yet (E2) |
 | `seaweedfs` | S3 API for media (ADR-008), single node | inside the stack as `http://seaweedfs:8333`, signed requests only; S3 gRPC `seaweedfs:18333` (IAM calls need a JWT) | volume `capsule_seaweed_data`, never backed up | none yet (E2) |
@@ -48,6 +49,7 @@ Every service runs as a fixed non-root user, with `cap_drop: [ALL]`, no added ca
 | Service | `user` | Root filesystem |
 | --- | --- | --- |
 | `api` | `10001:10001` | read-only, tmpfs `/tmp` (64 MB) |
+| `migrate` | `10001:10001` (same image as `api`) | read-only, tmpfs `/tmp` (64 MB) |
 | `postgres` | `999:999` (image's `postgres`) | read-only, tmpfs `/tmp` (64 MB) and `/var/run/postgresql` (1 MB) |
 | `redis` | `999:1000` (image's `redis`) | read-only, tmpfs `/tmp` (64 MB) |
 | `seaweedfs` | `1000:1000` (image's `seaweed`) | writable, because Compose cannot place `configs.content` in a read-only container; tmpfs `/tmp` (64 MB, Unix sockets) |

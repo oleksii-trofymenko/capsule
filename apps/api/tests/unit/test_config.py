@@ -1,8 +1,10 @@
+from collections.abc import Callable
+
 import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
-from core.config import ConfigError, Settings, normalise_database_url
+from core.config import ConfigError, Settings, database_url_from_env, normalise_database_url
 
 REQUIRED = {
     "DATABASE_URL": "postgresql://capsule:dummy@localhost:5432/capsule",
@@ -77,6 +79,51 @@ def test_invalid_url_is_rejected_without_echoing_it(name: str, value: str) -> No
 def test_timeouts_must_be_sane_numbers(name: str, value: str) -> None:
     with pytest.raises(ConfigError, match=name):
         Settings.from_env(REQUIRED | {name: value})
+
+
+def test_database_url_from_env_normalises_the_driver() -> None:
+    assert database_url_from_env(REQUIRED) == (
+        "postgresql+psycopg://capsule:dummy@localhost:5432/capsule"
+    )
+
+
+@pytest.mark.parametrize(
+    "environ",
+    [
+        {},
+        {"DATABASE_URL": "mysql://capsule:hunter2@localhost/capsule"},
+        {"DATABASE_URL": "postgresql://capsule:hunter2@/capsule"},
+        {"DATABASE_URL": "hunter2"},
+    ],
+    ids=["missing", "wrong-scheme", "no-host", "not-a-url"],
+)
+def test_database_url_from_env_rejects_without_echoing(environ: dict[str, str]) -> None:
+    with pytest.raises(ConfigError, match="DATABASE_URL") as caught:
+        database_url_from_env(environ)
+
+    message = str(caught.value)
+    assert "hunter2" not in message
+    assert "localhost" not in message
+    assert "capsule" not in message
+
+
+@pytest.mark.parametrize(
+    "parse",
+    [
+        lambda url: normalise_database_url(url),
+        lambda url: database_url_from_env({"DATABASE_URL": url}),
+        lambda url: Settings.from_env(REQUIRED | {"DATABASE_URL": url}),
+    ],
+    ids=["normalise", "from-env-url-only", "settings"],
+)
+def test_unparseable_host_is_rejected_without_echoing(parse: Callable[[str], object]) -> None:
+    # urlsplit's own ValueError quotes the bracketed host.
+    with pytest.raises(ConfigError, match="DATABASE_URL") as caught:
+        parse("postgresql://u:pw@[secrethost]/db")
+
+    assert "secrethost" not in str(caught.value)
+    assert "pw" not in str(caught.value)
+    assert caught.value.__suppress_context__
 
 
 def test_secrets_are_hidden_in_repr() -> None:

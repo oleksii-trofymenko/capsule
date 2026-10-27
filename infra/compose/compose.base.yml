@@ -34,6 +34,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     # Health check comes from the image: /v1/health (liveness), never /v1/ready.
     # Same uid as the Dockerfile's USER; stated here so check-privileges.sh can see it.
     user: "10001:10001"
@@ -44,8 +46,38 @@ services:
     restart: unless-stopped
     logging: *logging
 
+  # E1-05a: one-shot `alembic upgrade head` before api starts (ADR-007). Same image and hardening
+  # as api; only the database variable and only the internal network.
+  # Never merge it into api with an anchor or `extends`: it would inherit api's secrets and env (ADR-015).
+  migrate:
+    build:
+      context: ../../apps/api
+    image: capsule-api:local
+    command: ["alembic", "upgrade", "head"]
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:?set in .env}:${POSTGRES_PASSWORD:?set in .env}@postgres:5432/${POSTGRES_DB:?set in .env}
+    networks: [backend]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    # The image's health check probes /v1/health, which a one-shot never serves; with it the
+    # container would sit in "starting" and `up --wait` would wait on it. Disabled, `--wait`
+    # treats the exited-0 container as done.
+    healthcheck:
+      disable: true
+    user: "10001:10001"
+    read_only: true
+    tmpfs: [/tmp:size=64m]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    restart: "no"
+    logging: *logging
+
   postgres:
     image: pgvector/pgvector:0.8.7-pg16@sha256:7b822b0aac60967beb1ea5e576b8602c94c300a157d187f385ae3e0da199b90a
+    # ADR-022: error lines carry no DETAIL, CONTEXT or STATEMENT, so no row values reach the logs.
+    # Checked with SHOW in the CI `stack` job.
+    command: ["postgres", "-c", "log_error_verbosity=terse", "-c", "log_min_error_statement=panic"]
     environment:
       POSTGRES_USER: ${POSTGRES_USER:?set in .env}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set in .env}

@@ -5,5 +5,8 @@
 !main.py
 !core/
 !modules/
+# Run by the Compose `migrate` service (E1-05a).
+!alembic.ini
+!migrations/
 **/__pycache__
 **/*.py[cod]
