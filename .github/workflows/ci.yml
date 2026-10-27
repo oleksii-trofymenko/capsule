@@ -342,18 +342,23 @@ jobs:
       # env-init writes random values for every `change-me` in .env.example and the files in
       # secrets/ (ADR-015), and prints no value. `generate-only` skips the file layout, so every
       # value can be masked here, before any later step can print it; `make up` reuses them.
-      # The secrets/ values also go to a mode-600 pattern file for the leaked-value log check.
+      # Every value also goes to a mode-600 pattern file for the leaked-value log check, and that
+      # check is written once to $RUNNER_TEMP/leak-check.sh for the two places that run it.
       - name: Throwaway secrets (generated and masked)
         run: |
           bash infra/compose/env-init.sh . generate-only
+          patterns="$RUNNER_TEMP/leak-patterns"
+          install -m 600 /dev/null "$patterns"
           for key in $(sed -nE 's/^([A-Z0-9_]+)=change-me$/\1/p' .env.example); do
             value=$(sed -nE "s/^${key}=(.*)$/\1/p" .env)
             [ -n "$value" ] || { echo "::error::$key missing from .env"; exit 1; }
             echo "::add-mask::$value"
+            printf '%s\n' "$value" >> "$patterns"
           done
-          patterns="$RUNNER_TEMP/leak-patterns"
-          install -m 600 /dev/null "$patterns"
-          for f in secrets/*; do
+          shopt -s nullglob
+          files=(secrets/*)
+          [ "${#files[@]}" -gt 0 ] || { echo "::error::no files in secrets/ after env-init"; exit 1; }
+          for f in "${files[@]}"; do
             case ${f#secrets/} in
               jwt_signing_keys) ;; # `kid=hexkey` lines: each hex value masked on its own
               *) echo "::error::no masking rule for $f; add one here (ADR-015)"; exit 1 ;;
@@ -369,6 +374,24 @@ jobs:
             [ "$n" -gt 0 ] || { echo "::error::$f has no key lines"; exit 1; }
             echo "$f: $n value(s) masked"
           done
+          echo "leak patterns: $(wc -l < "$patterns") value(s) (.env and secrets/)"
+          cat > "$RUNNER_TEMP/leak-check.sh" <<'EOF'
+          # Fails if any generated value appears in the stack logs (ADR-015).
+          set -euo pipefail
+          p="$RUNNER_TEMP/leak-patterns"
+          [ -s "$p" ] || { echo "::error::leak patterns file is missing or empty"; exit 1; }
+          # Control: the grep must hit a line that contains the first pattern.
+          grep -qFf "$p" <<< "control $(head -n1 "$p") control" || { echo "::error::leak grep self-test did not match"; exit 1; }
+          # A variable, not a pipe: with pipefail, `grep -q` closing the pipe early hides a hit.
+          logs=$($COMPOSE logs --no-color)
+          rc=0
+          grep -qFf "$p" <<< "$logs" || rc=$?
+          case $rc in
+            0) echo "::error::a generated secret appears in the stack logs; see docs/runbooks/secret-leak.md"; exit 1 ;;
+            1) echo "none of the $(wc -l < "$p") generated value(s) appear in the logs" ;;
+            *) echo "::error::leak grep failed (exit $rc)"; exit 1 ;;
+          esac
+          EOF
       # Same layout as production (ADR-015): secrets/ 0700, key file root:10001 0440 via sudo.
       # From here on the runner (uid 1001) can read it only with sudo.
       - name: Secrets layout (sudo)
@@ -419,13 +442,8 @@ jobs:
           export SEAWEEDFS_S3_ACCESS_KEY SEAWEEDFS_S3_SECRET_KEY
           psql "CREATE TABLE ci_smoke (v text); INSERT INTO ci_smoke VALUES ('kept');"
           test "$($COMPOSE exec -T redis redis-cli SET ci:smoke kept)" = "OK"
-          # Leaked-value check before `make down` removes these containers and their logs. Logs go
-          # to a variable, not a pipe: with pipefail, `grep -q` closing the pipe early hides a hit.
-          logs=$($COMPOSE logs --no-color)
-          if grep -qFf "$RUNNER_TEMP/leak-patterns" <<< "$logs"; then
-            echo "::error::a generated secret appears in the stack logs; see docs/runbooks/secret-leak.md"
-            exit 1
-          fi
+          # Leaked-value check before `make down` removes these containers and their logs.
+          bash "$RUNNER_TEMP/leak-check.sh"
           put=$(s3 put) || true # an empty result is reported below, not lost to bash -e
           if [ "${put%% *}" != "200" ]; then
             echo "::error::S3 PUT before restart: ${put:-<none>} (want 200); see docs/runbooks/compose-stack.md"
@@ -440,13 +458,7 @@ jobs:
           [ "$got_s3" = "200 kept" ] || echo "::error::S3 GET right after make up: ${got_s3:-<none>} (want 200 kept); see docs/runbooks/compose-stack.md"
           test "$got_pg" = "kept" && test "$got_redis" = "kept" && test "$got_s3" = "200 kept"
       - name: No generated secret in the stack logs (after restart)
-        run: |
-          logs=$($COMPOSE logs --no-color)
-          if grep -qFf "$RUNNER_TEMP/leak-patterns" <<< "$logs"; then
-            echo "::error::a generated secret appears in the stack logs; see docs/runbooks/secret-leak.md"
-            exit 1
-          fi
-          echo "none of the $(wc -l < "$RUNNER_TEMP/leak-patterns") generated value(s) appear in the logs"
+        run: bash "$RUNNER_TEMP/leak-check.sh"
       # Container state and logs only. Never `compose config` or `docker inspect` here: both print
       # the interpolated secrets. Keep the `service | ` prefix: a log line then cannot start with
       # `::` and act as a workflow command. If `--no-log-prefix` is ever used, wrap the dump in
@@ -461,7 +473,7 @@ jobs:
         run: |
           [ ! -f .env ] || $COMPOSE down --volumes --remove-orphans
           # secrets/ is runner-owned 0700, so its root-owned file is removed without sudo.
-          rm -rf .env secrets "$RUNNER_TEMP/leak-patterns"
+          rm -rf .env secrets "$RUNNER_TEMP/leak-patterns" "$RUNNER_TEMP/leak-check.sh"
 
   ci-ok:
     name: ci-ok
