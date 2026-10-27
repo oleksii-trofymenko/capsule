@@ -380,12 +380,25 @@ jobs:
           set -euo pipefail
           p="$RUNNER_TEMP/leak-patterns"
           [ -s "$p" ] || { echo "::error::leak patterns file is missing or empty"; exit 1; }
-          # Control: the grep must hit a line that contains the first pattern.
-          grep -qFf "$p" <<< "control $(head -n1 "$p") control" || { echo "::error::leak grep self-test did not match"; exit 1; }
+          # ADR-024: the one exception. SeaweedFS logs the S3 access key ID (an identifier, not a
+          # secret) in its startup line; only that line, only from the seaweedfs service, is dropped.
+          # The ID anywhere else still fails. A changed message is not dropped, so CI fails closed.
+          # SeaweedFS 4.48 writes `auth_credentials.go:582 Added ...` (no `]`); `\]?` also takes glog's.
+          adr024='^seaweedfs-[0-9]+ +\| .*auth_credentials\.go:[0-9]+\]? Added admin identity from AWS environment variables: '
+          # scan: reads logs on stdin; exit 0 = a generated value found, 1 = none, 2+ = error.
+          scan() {
+            local kept rc=0
+            kept=$(grep -vE "$adr024") || rc=$?
+            [ "$rc" -le 1 ] || return 2
+            grep -qFf "$p" <<< "$kept"
+          }
+          # Control: a non-seaweedfs line carrying the ADR-024 message and the first pattern must hit.
+          scan <<< "api-1  | auth_credentials.go:1 Added admin identity from AWS environment variables: $(head -n1 "$p")" ||
+            { echo "::error::leak grep self-test did not match"; exit 1; }
           # A variable, not a pipe: with pipefail, `grep -q` closing the pipe early hides a hit.
           logs=$($COMPOSE logs --no-color)
           rc=0
-          grep -qFf "$p" <<< "$logs" || rc=$?
+          scan <<< "$logs" || rc=$?
           case $rc in
             0) echo "::error::a generated secret appears in the stack logs; see docs/runbooks/secret-leak.md"; exit 1 ;;
             1) echo "none of the $(wc -l < "$p") generated value(s) appear in the logs" ;;

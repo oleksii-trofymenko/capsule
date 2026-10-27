@@ -136,6 +136,10 @@ services:
       # this is not protection against a stolen disk; that needs host disk encryption (README).
       - -s3.encryptVolumeData
       - -master.telemetry=false
+      # No -v: glog verbosity stays at the default. Raising it needs the CI leak check re-run
+      # (ADR-024): SigV4 failure logging grows with verbosity and may print the S3 access key ID
+      # in lines the filter does not drop. At the default, a wrong-secret request logs no ID
+      # (checked on 4.48; check-seaweedfs.sh sends one before the leak check runs).
     environment:
       # The one S3 identity (admin), read on every start. Without any identity SeaweedFS S3 would
       # accept anonymous requests.
