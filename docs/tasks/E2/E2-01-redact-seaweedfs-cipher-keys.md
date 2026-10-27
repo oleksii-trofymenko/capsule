@@ -20,11 +20,12 @@ SeaweedFS 4.48 logs the chunk `CipherKey` in plain text at error level (`reader_
 - [ ] The log collector pipeline for the seaweedfs container redacts the key before shipping (e.g. a `replace` stage on `(?i)cipher_?key\W*[^\s,}]+` → `CipherKey:[REDACTED]`).
 - [ ] A test feeds the real SeaweedFS 4.48 log line through the pipeline and asserts no key leaves it.
 - [ ] Ship only warning level and above from seaweedfs unless a card justifies more.
+- [ ] The CI `stack` job's "Dump stack logs" step filters seaweedfs `CipherKey` values the same way (public Actions logs), until the upstream fix lands.
 - [ ] This card is an acceptance criterion of (or merged into) the first E2 card that ships container logs; logs must not be shipped without it.
 
 ## Allowed files
 
-- `infra/**` (collector config), `docs/runbooks/**`
+- `infra/**` (collector config), `docs/runbooks/**`, `.github/workflows/ci.yml` (`stack` log dump only)
 
 ## Out of scope
 
@@ -39,5 +40,6 @@ SeaweedFS 4.48 logs the chunk `CipherKey` in plain text at error level (`reader_
 - Plan approved:
 - Decisions:
   - Filed 2026-10-26 from the E0-12 reviews.
+  - 2026-10-27: added the CI log-dump criterion. Since E0-14 the `stack` job does an S3 read right after restart; on a regression it hits the failed-read path and the dump prints the key in a public log (security-engineer, E0-14 review, low: throwaway object only).
 - Numbers:
 - Left for later:
