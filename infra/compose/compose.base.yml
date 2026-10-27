@@ -48,6 +48,7 @@ services:
 
   # E1-05a: one-shot `alembic upgrade head` before api starts (ADR-007). Same image and hardening
   # as api; only the database variable and only the internal network.
+  # Never merge it into api with an anchor or `extends`: it would inherit api's secrets and env (ADR-015).
   migrate:
     build:
       context: ../../apps/api

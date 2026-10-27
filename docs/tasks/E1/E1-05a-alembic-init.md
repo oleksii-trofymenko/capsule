@@ -28,7 +28,7 @@ E1-05 is the first card that needs tables. Split out of E1-05 (2026-10-27) so th
 ## Allowed files
 
 - `apps/api/pyproject.toml`, `apps/api/uv.lock`, `apps/api/alembic.ini`, `apps/api/migrations/**`, `apps/api/core/**` (database URL only), `apps/api/.dockerignore`, `apps/api/Dockerfile` (only if the migrate step needs it), `apps/api/tests/**`, `apps/api/CLAUDE.md`
-- `infra/compose/compose.base.yml` (`postgres` service `command` and the migrate step only), `Makefile` (`up` target: a `run --rm migrate` step only if Compose `--wait` rejects an exited one-shot) and root `CLAUDE.md` Commands (only if a target is added), `.github/workflows/ci.yml` (`stack` job: the `SHOW` step only), `docs/runbooks/compose-stack.md` (migration section)
+- `infra/compose/compose.base.yml` (`postgres` service `command` and the migrate step only), `Makefile` (`up` target: a `run --rm migrate` step only if Compose `--wait` rejects an exited one-shot) and root `CLAUDE.md` Commands (only if a target is added), `.github/workflows/ci.yml` (`stack` job: the `SHOW` step only), `docs/runbooks/compose-stack.md` (migration section and the CI `SHOW` triage bullet), `infra/compose/README.md` (`migrate` rows in the service and privilege tables; added 2026-10-27, Orchestrator-approved after review)
 
 ## Out of scope
 
