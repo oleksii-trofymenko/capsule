@@ -12,7 +12,7 @@ from core.db import get_session
 from modules.auth import repository
 from modules.auth.activity import record_activity
 from modules.auth.service import AuthService
-from modules.auth.tokens import InvalidTokenError, Kind, TokenService
+from modules.auth.tokens import MAX_ACCESS_TOKEN_LENGTH, InvalidTokenError, Kind, TokenService
 
 
 @dataclass(frozen=True)
@@ -46,8 +46,8 @@ async def current_principal(
     tokens: Annotated[TokenService, Depends(get_token_service)],
 ) -> Principal:
     scheme, _, token = request.headers.get("Authorization", "").partition(" ")
-    if scheme.lower() != "bearer" or not token:
-        raise unauthorized()
+    if scheme.lower() != "bearer" or not token or len(token) > MAX_ACCESS_TOKEN_LENGTH:
+        raise unauthorized()  # an oversized token is refused before any parsing
     try:
         claims = tokens.verify_access(token)
     except InvalidTokenError:

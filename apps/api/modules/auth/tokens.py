@@ -22,6 +22,7 @@ AUDIENCE = "capsule-mobile"
 TOKEN_TYPE = "at+jwt"  # noqa: S105 - the JWT `typ` header, not a secret
 ALGORITHM = "HS256"  # the only one, fixed in code (ADR-014)
 REQUIRED_CLAIMS = ["exp", "iat", "iss", "aud", "sub", "kind", "jti"]
+MAX_ACCESS_TOKEN_LENGTH = 1024  # contracts/openapi.yaml TokenPair.access_token
 
 
 class InvalidTokenError(Exception):

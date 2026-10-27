@@ -140,11 +140,19 @@ def _r5_tokens() -> dict[str, str]:
         "list kid": forge({"alg": "HS256", "kid": [KID], "typ": "at+jwt"}),
         "missing typ": forge({"alg": "HS256", "kid": KID}),
         "typ JWT": forge({"alg": "HS256", "kid": KID, "typ": "JWT"}),
+        # RFC 7515 4.1.11: an extension the verifier does not understand must be refused.
+        "unknown crit": forge(
+            {"alg": "HS256", "kid": KID, "typ": "at+jwt", "crit": ["x-capsule"], "x-capsule": 1}
+        ),
         "wrong key": forge(key=OTHER_KEY),
         "expired": forge(claims=valid_claims(exp=int(time.time()) - 1)),
         "exp missing": forge(claims=without(valid_claims(), "exp")),
         "jti missing": forge(claims=without(valid_claims(), "jti")),
         "kind missing": forge(claims=without(valid_claims(), "kind")),
+        "iat missing": forge(claims=without(valid_claims(), "iat")),
+        "iss missing": forge(claims=without(valid_claims(), "iss")),
+        "aud missing": forge(claims=without(valid_claims(), "aud")),
+        "sub missing": forge(claims=without(valid_claims(), "sub")),
         "wrong aud": forge(claims=valid_claims(aud="someone-else")),
         "wrong iss": forge(claims=valid_claims(iss="someone-else")),
         "tampered signature": f"{head}.{body}.{tampered}",

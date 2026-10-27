@@ -34,6 +34,8 @@ _TOUCH = text(
     WHERE id = :id AND last_activity_at < now() - interval '1 hour'
     """
 )
+# A slow database must not hold the connection after the response has gone.
+_TOUCH_TIMEOUT = text("SET LOCAL statement_timeout = '2s'")
 
 
 async def insert_principal(session: AsyncSession, kind: Kind) -> uuid.UUID:
@@ -76,4 +78,6 @@ async def principal_kind(session: AsyncSession, principal_id: uuid.UUID) -> Kind
 
 
 async def touch_last_activity(conn: AsyncConnection, principal_id: uuid.UUID) -> None:
+    """Call inside a transaction: the timeout bounds this update only, lock waits included."""
+    await conn.execute(_TOUCH_TIMEOUT)
     await conn.execute(_TOUCH, {"id": principal_id})

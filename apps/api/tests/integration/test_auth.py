@@ -4,6 +4,7 @@ import base64
 import hashlib
 import json
 import os
+import time
 import uuid
 from collections.abc import AsyncIterator
 from typing import Any
@@ -34,9 +35,13 @@ def make_app(**overrides: object) -> FastAPI:
     app = create_app(settings.model_copy(update=overrides))
 
     @app.get(ME)
-    async def me(principal: CurrentPrincipal, fail: bool = False) -> dict[str, str]:
+    async def me(
+        principal: CurrentPrincipal, fail: bool = False, crash: bool = False
+    ) -> dict[str, str]:
         if fail:
             raise HTTPException(status_code=404)
+        if crash:
+            raise RuntimeError("unhandled")  # the middleware turns it into a 500
         return {"id": str(principal.id), "kind": principal.kind}
 
     return app
@@ -289,6 +294,22 @@ async def test_every_auth_failure_gets_the_same_401(
     assert_unauthorized(response)
 
 
+async def test_r5_oversized_token_gets_401_before_parsing(
+    app: FastAPI, client: httpx.AsyncClient
+) -> None:
+    principal = str(principal_of(await new_guest(client)))
+    # Correctly signed for a live principal: only the length can reject the padded one.
+    normal = forge(claims=valid_claims(sub=principal))
+    oversized = forge(claims=valid_claims(sub=principal, pad="x" * 1024))
+
+    ok = await client.get(ME, headers={"Authorization": f"Bearer {normal}"})
+    refused = await client.get(ME, headers={"Authorization": f"Bearer {oversized}"})
+
+    assert ok.status_code == 200
+    assert len(oversized) > 1024
+    assert_unauthorized(refused)
+
+
 # --- last_activity_at (ADR-022) ---
 
 
@@ -311,22 +332,26 @@ async def _recently_active(app: FastAPI, principal: uuid.UUID) -> bool:
 
 
 @pytest.mark.parametrize(
-    ("age", "query", "touched"),
+    ("age", "query", "status", "touched"),
     [
-        ("2 hours", "", True),  # 2xx
-        ("2 hours", "?fail=true", False),  # authenticated, then a 404
-        ("30 minutes", "", False),  # hourly cap
+        ("2 hours", "", 200, True),
+        ("2 hours", "?fail=true", 404, False),  # authenticated, then a handled error
+        ("2 hours", "?crash=true", 500, False),  # authenticated, then an unhandled error
+        ("30 minutes", "", 200, False),  # hourly cap
     ],
 )
 async def test_last_activity_is_touched_only_after_a_2xx_and_at_most_hourly(
-    app: FastAPI, client: httpx.AsyncClient, age: str, query: str, touched: bool
+    app: FastAPI, client: httpx.AsyncClient, age: str, query: str, status: int, touched: bool
 ) -> None:
     guest = await new_guest(client)
     principal = principal_of(guest)
     await _set_inactive(app, principal, age)
 
-    await client.get(ME + query, headers={"Authorization": f"Bearer {guest['access_token']}"})
+    response = await client.get(
+        ME + query, headers={"Authorization": f"Bearer {guest['access_token']}"}
+    )
 
+    assert response.status_code == status
     assert await _recently_active(app, principal) is touched
 
 
@@ -385,3 +410,29 @@ async def test_logs_hold_no_secrets_and_a15_events_carry_the_principal(
             assert secret not in raw
             assert hashlib.sha256(secret.encode()).hexdigest() not in raw
     assert "127.0.0.1" not in raw
+
+
+async def test_slow_touch_is_cut_by_the_statement_timeout(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    app = make_app()  # after capsys, so the JSON handler writes to the captured stdout
+    async with client_for(app, lifespan=True) as client:
+        guest = await new_guest(client)
+        principal = principal_of(guest)
+        await _set_inactive(app, principal, "2 hours")
+        async with app.state.engine.begin() as blocker:
+            # Hold the row lock: the touch waits until its 2 s statement timeout cancels it.
+            await blocker.execute(
+                text("SELECT 1 FROM principals WHERE id = :id FOR UPDATE"), {"id": principal}
+            )
+            started = time.perf_counter()
+            response = await client.get(
+                ME, headers={"Authorization": f"Bearer {guest['access_token']}"}
+            )
+            elapsed = time.perf_counter() - started
+
+    assert response.status_code == 200
+    assert 1.5 < elapsed < 5
+    lines = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    failed = [line for line in lines if line["msg"] == "last activity update failed"]
+    assert [line["error"] for line in failed] == ["OperationalError"]

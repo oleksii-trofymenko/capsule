@@ -56,7 +56,9 @@ UPGRADE = (
         created_at timestamptz NOT NULL DEFAULT now(),
         rotated_at timestamptz,
         grace_used_at timestamptz,
-        successor_hash bytea,
+        successor_hash bytea
+            CONSTRAINT refresh_tokens_successor_hash_check
+            CHECK (successor_hash IS NULL OR octet_length(successor_hash) = 32),
         CONSTRAINT refresh_tokens_rotated_check
             CHECK (state <> 'rotated' OR (rotated_at IS NOT NULL AND successor_hash IS NOT NULL))
     )
