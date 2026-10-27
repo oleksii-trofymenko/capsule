@@ -74,8 +74,8 @@ Each application secret is one file in the gitignored repo-root `secrets/`, gene
     - `secrets/` is 0700 and owned by the operator.
     - Each file is set with `sudo chown root:<GID> <file> && sudo chmod 0440 <file>`, using the GID from the inventory.
     - CI runners have passwordless sudo. A Linux host without sudo fails with a clear message.
-      - CI uses the same layout as production, so a wrong owner or mode fails the `stack` job.
-      - Order in CI: generate the files, mask and capture every value, then apply the layout. After the layout the runner (uid 1001) can read the files only with `sudo`.
+    - CI uses the same layout as production, so a wrong owner or mode fails the `stack` job.
+    - Order in CI: generate the files, mask and capture every value, then apply the layout. After the layout the runner (uid 1001) can read the files only with `sudo`.
     - Editing a file on Linux (rotation) needs sudo.
   - **Cloud:** the provider's secret store must deliver each secret as a read-only file at the same path, mounted into the same services only and readable only by the consuming service's uid or GID. Never as an environment variable. `compose.cloud.yml` changes only the `secrets.<name>.file` sources.
 - No pepper (owner accepted 2026-10-27).
