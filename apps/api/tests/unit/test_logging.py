@@ -1,17 +1,20 @@
+import asyncio
+import gc
+import inspect
+import io
 import json
 import logging
-import logging.config
 import sys
-from collections.abc import Iterator
+from collections import namedtuple
 
+import psycopg
 import pytest
-from uvicorn.config import LOGGING_CONFIG
+from sqlalchemy.exc import IntegrityError
 
 from core.logging import (
     QUIET_LOGGERS,
-    SERVER_ACCESS_LOGGER,
-    SERVER_LOGGERS,
     JsonFormatter,
+    JsonHandler,
     configure_logging,
     request_id_var,
 )
@@ -75,27 +78,6 @@ def test_third_party_loggers_only_pass_warnings(capsys: pytest.CaptureFixture[st
         assert logging.getLogger(name).getEffectiveLevel() == logging.WARNING
 
 
-@pytest.fixture
-def uvicorn_logging() -> Iterator[None]:
-    """Apply uvicorn's own logging config, as `uvicorn` does before it calls the app factory."""
-    names = (*SERVER_LOGGERS, SERVER_ACCESS_LOGGER)
-    saved = {
-        name: (
-            logging.getLogger(name).handlers[:],
-            logging.getLogger(name).level,
-            logging.getLogger(name).propagate,
-        )
-        for name in names
-    }
-    logging.config.dictConfig(LOGGING_CONFIG)
-    yield
-    for name, (handlers, level, propagate) in saved.items():
-        server_logger = logging.getLogger(name)
-        server_logger.handlers[:] = handlers
-        server_logger.setLevel(level)
-        server_logger.propagate = propagate
-
-
 @pytest.mark.usefixtures("uvicorn_logging")
 def test_uvicorn_server_lines_are_json_at_our_level(capsys: pytest.CaptureFixture[str]) -> None:
     configure_logging("WARNING")
@@ -125,3 +107,219 @@ def test_uvicorn_access_lines_are_never_written(capsys: pytest.CaptureFixture[st
         "Started server process [1]"
     ]
     assert "203.0.113.7" not in captured.out + captured.err
+
+
+PII = "someone@example.invalid"
+
+
+def _integrity_error() -> IntegrityError:
+    orig = psycopg.errors.UniqueViolation(f"duplicate key\nDETAIL: Key (email)=({PII}) exists")
+    return IntegrityError("INSERT INTO t (email) VALUES (%(email)s)", {"email": PII}, orig)
+
+
+def _raised(exc: BaseException) -> BaseException:
+    try:
+        raise exc
+    except BaseException as caught:
+        return caught
+
+
+def _chained() -> BaseException:
+    try:
+        try:
+            raise _integrity_error()
+        except IntegrityError as exc:
+            raise RuntimeError(f"wrapped: {exc}") from exc
+    except RuntimeError as outer:
+        return outer
+
+
+IE = "IntegrityError (UniqueViolation)"
+P = namedtuple("P", "a b")
+GROUP = _raised(ExceptionGroup("g", [_integrity_error()]))
+
+
+@pytest.mark.parametrize(
+    ("msg", "args", "exc", "field", "expected"),
+    [
+        ("failed", None, _raised(_integrity_error()), "exc", IE),
+        ("failed: %s", (_integrity_error(),), None, "msg", f"failed: {IE}"),
+        ("failed: %(e)s", ({"e": _integrity_error()},), None, "msg", f"failed: {IE}"),
+        (_integrity_error(), None, None, "msg", IE),
+        ("failed", None, _chained(), "exc", f"RuntimeError <- {IE}"),
+        ("failed", None, GROUP, "exc", f"ExceptionGroup <- {IE}"),
+        ("failed", None, _raised(psycopg.errors.UniqueViolation(PII)), "exc", "UniqueViolation"),
+        ("failed: %s", ([_integrity_error()],), None, "msg", f"failed: ['{IE}']"),
+        ("failed: %s", ({"k": (_integrity_error(),)},), None, "msg", f"failed: {{'k': ('{IE}',)}}"),
+        ("failed: %s", ({_integrity_error(): 1},), None, "msg", f"failed: {{'{IE}': 1}}"),
+        ("failed: %s", (P(1, _integrity_error()),), None, "msg", f"failed: (1, '{IE}')"),
+    ],
+    ids=[
+        "exc_info", "arg", "mapping-arg", "msg", "chained", "group", "driver",
+        "list", "nested", "key", "namedtuple",
+    ],
+)  # fmt: skip
+def test_database_errors_are_described_never_printed(
+    msg: object,
+    args: tuple[object, ...] | None,
+    exc: BaseException | None,
+    field: str,
+    expected: str,
+) -> None:
+    exc_info = (type(exc), exc, exc.__traceback__) if exc is not None else None
+    # LogRecord turns a single mapping argument into the mapping, as logger.error() does.
+    record = logging.LogRecord("capsule.test", logging.ERROR, __file__, 1, msg, args, exc_info)
+    line = JsonFormatter().format(record)
+
+    assert json.loads(line)[field].split("\n")[0] == expected
+    assert PII not in line
+    assert "INSERT" not in line
+    assert "Traceback" not in line
+
+
+def test_database_error_in_an_allowed_extra_is_described() -> None:
+    deep: list[object] = [_integrity_error()]
+    expected: list[object] = ["<list>"]
+    for _ in range(10):
+        deep = [deep]
+    for _ in range(6):  # the dict is depth 0; the list at depth 8 prints as its type
+        expected = [expected]
+    line = JsonFormatter().format(_record(error={"e": _integrity_error(), "deep": deep}))
+
+    assert json.loads(line)["error"] == {"e": IE, "deep": expected}
+    assert PII not in line
+
+
+def test_values_without_a_database_error_pass_through_unchanged() -> None:
+    args = ({1, 2}, [[[[["deep"]]]]], frozenset({"a"}), {"k": ("v",)})
+    record = _record(error={"nested": [{3}]})
+    record.msg, record.args = "cfg %s %s %s %s", args
+
+    payload = json.loads(JsonFormatter().format(record))
+
+    assert payload["msg"] == logging.makeLogRecord({"msg": record.msg, "args": args}).getMessage()
+    assert payload["error"] == json.loads(json.dumps({"nested": [{3}]}, default=str))
+
+
+def test_one_letter_wrapper_message_stays_readable() -> None:
+    try:
+        try:
+            raise _integrity_error()
+        except IntegrityError as exc:
+            raise RuntimeError("e") from exc
+    except RuntimeError as outer:
+        record = _record(exc_info=_exc_info(outer))
+    record.msg, record.args = "user lookup failed", None
+
+    payload = json.loads(JsonFormatter().format(record))
+
+    assert payload["msg"] == "user lookup failed"
+    assert payload["exc"].startswith(f"RuntimeError <- {IE}\n")
+    assert "DETAIL" not in json.dumps(payload)
+
+
+def test_finished_task_argument_is_described() -> None:
+    async def insert() -> None:
+        raise _integrity_error()
+
+    loop = asyncio.new_event_loop()
+    try:
+        task = loop.create_task(insert())
+        loop.run_until_complete(asyncio.sleep(0))
+        record = _record()
+        record.msg, record.args = "task %r failed", (task,)
+        line = JsonFormatter().format(record)
+    finally:
+        loop.close()
+
+    assert f"exception={IE}" in json.loads(line)["msg"]
+    assert PII not in line
+    assert "DETAIL" not in line
+
+
+def test_database_traceback_keeps_frame_locations_only() -> None:
+    exc = json.loads(JsonFormatter().format(_record(exc_info=_exc_info(_chained()))))["exc"]
+
+    assert exc.startswith(f"RuntimeError <- {IE}\nRuntimeError raised at:\n")
+    assert "test_logging.py" in exc
+    assert ", in _chained" in exc
+    assert PII not in exc
+    assert "DETAIL" not in exc
+
+
+def _exc_info(exc: BaseException) -> tuple[type[BaseException], BaseException, object]:
+    return type(exc), exc, exc.__traceback__
+
+
+def test_prebuilt_message_quoting_the_error_is_rewritten() -> None:
+    error = _raised(_integrity_error())
+    record = _record(exc_info=_exc_info(error))
+    record.msg, record.args = f"future: <Task exception={error!r}> after {error}", None
+
+    line = JsonFormatter().format(record)
+
+    assert json.loads(line)["msg"] == f"future: <Task exception={IE}> after {IE}"
+    assert PII not in line
+
+
+def test_unretrieved_task_error_from_asyncio_is_described(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    async def insert() -> None:
+        raise _integrity_error()
+
+    configure_logging("INFO")
+    loop = asyncio.new_event_loop()
+    try:
+        task = loop.create_task(insert())
+        loop.run_until_complete(asyncio.sleep(0))
+        del task  # never awaited: asyncio logs "Task exception was never retrieved"
+        gc.collect()
+    finally:
+        loop.close()
+
+    out = capsys.readouterr().out
+    line = next(json.loads(raw) for raw in out.splitlines() if '"asyncio"' in raw)
+    assert line["msg"] == "Task exception was never retrieved"
+    assert line["exc"].startswith(IE)
+    assert PII not in out
+    assert "DETAIL" not in out
+
+
+def test_a_record_that_cannot_be_formatted_names_only_where(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    stream = io.StringIO()
+    handler = JsonHandler(stream)
+    handler.setFormatter(JsonFormatter())
+    log = logging.getLogger("capsule.test.broken")
+    log.addHandler(handler)
+    log.propagate = False
+    frame = inspect.currentframe()
+    assert frame is not None
+    token = request_id_var.set("rid-broken")
+    try:
+        log.error("x: %s %s", _integrity_error())  # one argument for two placeholders
+        call_line = frame.f_lineno - 1
+    finally:
+        request_id_var.reset(token)
+        log.removeHandler(handler)
+        log.propagate = True
+
+    line = json.loads(stream.getvalue())
+    assert set(line) == {
+        "ts",
+        "level",
+        "logger",
+        "msg",
+        "source_logger",
+        "where",
+        "error",
+        "request_id",
+    }
+    assert line["source_logger"] == "capsule.test.broken"
+    assert line["where"] == f"{__file__}:{call_line}"
+    assert line["error"] == "TypeError"
+    assert line["request_id"] == "rid-broken"
+    assert line["ts"].endswith("+00:00")
+    assert PII not in stream.getvalue() + capsys.readouterr().err

@@ -5,6 +5,7 @@ from hypothesis import given
 from hypothesis import strategies as st
 
 from core.config import ConfigError, Settings, database_url_from_env, normalise_database_url
+from tests.support import TEST_SIGNING_KEYS
 
 REQUIRED = {
     "DATABASE_URL": "postgresql://capsule:dummy@localhost:5432/capsule",
@@ -12,8 +13,12 @@ REQUIRED = {
 }
 
 
+def _from_env(environ: dict[str, str]) -> Settings:
+    return Settings.from_env(environ, signing_keys=TEST_SIGNING_KEYS)
+
+
 def test_from_env_reads_variables_and_applies_defaults() -> None:
-    settings = Settings.from_env(REQUIRED)
+    settings = _from_env(REQUIRED)
 
     assert settings.database_url.get_secret_value() == (
         "postgresql+psycopg://capsule:dummy@localhost:5432/capsule"
@@ -23,10 +28,11 @@ def test_from_env_reads_variables_and_applies_defaults() -> None:
     assert settings.ready_probe_timeout_s == 1.0
     assert settings.database_connect_timeout_s == 5
     assert settings.redis_socket_timeout_s == 5.0
+    assert settings.signing_keys == TEST_SIGNING_KEYS
 
 
 def test_from_env_reads_optional_variables() -> None:
-    settings = Settings.from_env(
+    settings = _from_env(
         REQUIRED
         | {
             "LOG_LEVEL": "DEBUG",
@@ -44,7 +50,7 @@ def test_from_env_reads_optional_variables() -> None:
 
 def test_missing_variable_is_named() -> None:
     with pytest.raises(ConfigError, match="REDIS_URL"):
-        Settings.from_env({"DATABASE_URL": REQUIRED["DATABASE_URL"]})
+        _from_env({"DATABASE_URL": REQUIRED["DATABASE_URL"]})
 
 
 @pytest.mark.parametrize(
@@ -58,7 +64,7 @@ def test_missing_variable_is_named() -> None:
 )
 def test_invalid_url_is_rejected_without_echoing_it(name: str, value: str) -> None:
     with pytest.raises(ConfigError) as caught:
-        Settings.from_env(REQUIRED | {name: value})
+        _from_env(REQUIRED | {name: value})
 
     assert name in str(caught.value)
     assert "hunter2" not in str(caught.value)
@@ -78,7 +84,7 @@ def test_invalid_url_is_rejected_without_echoing_it(name: str, value: str) -> No
 )
 def test_timeouts_must_be_sane_numbers(name: str, value: str) -> None:
     with pytest.raises(ConfigError, match=name):
-        Settings.from_env(REQUIRED | {name: value})
+        _from_env(REQUIRED | {name: value})
 
 
 def test_database_url_from_env_normalises_the_driver() -> None:
@@ -112,7 +118,7 @@ def test_database_url_from_env_rejects_without_echoing(environ: dict[str, str]) 
     [
         lambda url: normalise_database_url(url),
         lambda url: database_url_from_env({"DATABASE_URL": url}),
-        lambda url: Settings.from_env(REQUIRED | {"DATABASE_URL": url}),
+        lambda url: _from_env(REQUIRED | {"DATABASE_URL": url}),
     ],
     ids=["normalise", "from-env-url-only", "settings"],
 )
@@ -127,10 +133,13 @@ def test_unparseable_host_is_rejected_without_echoing(parse: Callable[[str], obj
 
 
 def test_secrets_are_hidden_in_repr() -> None:
-    settings = Settings.from_env(REQUIRED)
+    settings = _from_env(REQUIRED)
 
     assert "dummy" not in repr(settings)
     assert "dummy" not in str(settings.model_dump())
+    key = TEST_SIGNING_KEYS[0].key.get_secret_value()
+    assert key.hex() not in repr(settings)
+    assert repr(key) not in repr(settings)
 
 
 _part = st.text(alphabet="abcdefghijklmnopqrstuvwxyz0123456789-_", min_size=1, max_size=20)

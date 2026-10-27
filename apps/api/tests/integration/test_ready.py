@@ -17,7 +17,7 @@ from sqlalchemy.engine import make_url
 from core.config import ConfigError, Settings
 from main import create_app
 from tests.integration.tcp_proxy import StallingProxy
-from tests.support import assert_matches_contract, client_for
+from tests.support import TEST_SIGNING_KEYS, assert_matches_contract, client_for
 
 pytestmark = [pytest.mark.integration, pytest.mark.anyio]
 
@@ -30,7 +30,7 @@ DOWN_TIMEOUT_S = 0.5
 @pytest.fixture
 def settings() -> Settings:
     try:
-        settings = Settings.from_env(os.environ)
+        settings = Settings.from_env(os.environ, signing_keys=TEST_SIGNING_KEYS)
     except ConfigError as exc:
         pytest.fail(f"Integration tests need DATABASE_URL and REDIS_URL ({exc}). Run `make test`.")
     # Guard against a shell that points at a real database: test databases end in _test.
