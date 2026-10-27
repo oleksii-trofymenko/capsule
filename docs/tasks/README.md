@@ -32,6 +32,14 @@ E0-01 first. Then E0-03, E0-04, E0-06, E0-08 and E0-09 can run in parallel. E0-0
 4. After E1-05: E1-06, E1-07, E1-08 and E1-12 in parallel. E1-20 (base components) after E1-19 and E1-11.
 5. E1-09 after E1-07; E1-10 after E1-09. E1-13 after E1-07, E1-11, E1-12 and E1-20.
 6. E1-14 after E1-09, E1-12 and E1-20. It can run alongside E1-13.
-7. E1-16 (demo) last: it needs E1-08, E1-13, E1-14 and E1-15.
+7. E1-22 (API edge hardening) after E1-05, in parallel with step 4.
+8. E1-16 (demo) last: it needs E1-08, E1-13, E1-14, E1-15 and E1-22.
 
-E1-17 (password reset by email) is backlog, due before external beta. It is not part of the E1 demo.
+E1-23 (Postgres backups) after E1-03 and E1-04. It is not needed for the demo, but it must be in place before accounts hold real data.
+
+Before external beta, not part of the E1 demo:
+- E1-17 (password reset by email).
+- E1-24 (email field encryption) after E1-04 and E1-07.
+- E1-25 (host disk and SeaweedFS keys) after E1-04.
+
+E8-01 and E8-02 (named tunnel, pinning, bundle scan) wait for the owner's domain purchase. E8-01 may be pulled forward before E3 streaming, because quick tunnels do not support SSE.

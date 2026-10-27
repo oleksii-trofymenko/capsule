@@ -20,11 +20,12 @@ The API becomes reachable from the internet through the tunnel. Without limits, 
 - [ ] Redis-backed limits:
   - [ ] Per client IP on guest-credential issue, sign-up and sign-in.
   - [ ] Per principal (guest or account) on authenticated endpoints.
-  - [ ] A stricter per-email limit on failed sign-ins.
-  - [ ] Every key has a TTL.
+  - [ ] R1 (`docs/security.md`): failed sign-ins are throttled on email plus IP. The account is never locked, so an attacker cannot lock out the real user.
+  - [ ] R1/D5: rate-limit keys use an HMAC of the IP or email (HMAC key per ADR-015), never the raw value, and every key has a TTL.
 - [ ] Limits come from config. The defaults and the reasons for them are written in the card notes.
 - [ ] Going over a limit returns 429 as an RFC 9457 problem document with `Retry-After`. The contract documents the 429 response on the affected operations.
-- [ ] Client IP: `CF-Connecting-IP` is trusted only when a config flag says the API sits behind the tunnel; otherwise the socket address is used. A test proves a spoofed header is ignored when the flag is off.
+- [ ] R2: `CF-Connecting-IP` is trusted only when the "behind tunnel" flag is on **and** the socket peer is the cloudflared container. The peer identity comes from config, so this card doesn't wait for E1-15, which fixes how the peer is identified. In every other case the socket address is used. Tests show the header is ignored on a direct request through the published host port, on a request from another container on `edge`, and when the flag is off.
+- [ ] R8 (and A2): the rate limit runs before any password hash, so a flood of sign-ins cannot exhaust the CPU. A test shows a throttled request never reaches the hasher.
 - [ ] Redis down: auth endpoints fail closed with 503 problem documents, not 500s.
 - [ ] Tests: unit for the limit logic; integration with real Redis (limit reached, window resets, Redis down); contract.
 
@@ -48,5 +49,6 @@ The API becomes reachable from the internet through the tunnel. Without limits, 
 - Plan approved:
 - Decisions:
   - Filed 2026-10-27 from the approved E1 plan.
+  - 2026-10-27: amended from E1-01 threat model (docs/security.md).
 - Numbers:
 - Left for later:

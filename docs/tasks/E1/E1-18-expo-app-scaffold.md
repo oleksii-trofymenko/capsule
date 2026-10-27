@@ -24,6 +24,7 @@
   - [ ] MMKV is excluded from OS backups.
   - [ ] A `wipeAll()` for logout, deletion and reinstall.
   - [ ] A lint rule or test stops direct imports of either module elsewhere.
+- [ ] P1 (`docs/security.md`), the part missing above: secure-store data is also kept out of OS backup, including Android Auto Backup, and `shared/storage` offers no way to write a credential to MMKV.
 - [ ] API types are generated from `contracts/openapi.yaml` by a script. CI fails if the generated files are stale.
 - [ ] Jest + RNTL configured. `npm test` runs in the existing `unit (mobile)` job, `npm audit` passes in `audit (mobile)`, and the pre-commit hooks (ESLint, Prettier, tsc) pass.
 - [ ] Baseline numbers recorded: cold start of the empty release build on a mid-range Android, and APK size.
@@ -47,5 +48,8 @@
 - Decisions:
   - Filed 2026-10-27, added to the approved E1 plan: the plan assumed an Expo project existed, but `apps/mobile` has none.
   - An iOS development build on a physical iPhone needs a paid Apple Developer account (outside the €0 budget). The E1 demo phone is assumed to be Android unless the owner says otherwise.
+  - 2026-10-27: amended from E1-01 threat model (docs/security.md). Coverage of P1 and P2:
+    - P1 is shared with E1-12. Here, the `shared/storage` criteria (secure-store `AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY` as the only access, MMKV excluded from backup, no direct imports) cover it, plus the added P1 criterion for secure-store backup exclusion and no credentials in MMKV. E1-12 covers "nothing in logs or breadcrumbs".
+    - P2 is shared with E1-12. Here, `wipeAll()` clears both stores; E1-12 calls it on the first launch after install.
 - Numbers:
 - Left for later:

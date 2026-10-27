@@ -25,6 +25,11 @@ As a guest, I want to use Capsule straight away without creating an account, so 
 - [ ] A reusable dependency gives protected endpoints the current principal (guest or account).
 - [ ] Signing keys are read from config as ADR-015 requires; `env-init.sh` generates them if missing.
 - [ ] Logs carry no token, credential or IP at INFO level.
+- [ ] A4 (`docs/security.md`): the server stores only token hashes, never raw tokens. The same applies to guest credentials (§6). A test reads the tables and finds no raw value.
+- [ ] R4: the uvicorn access log is off, or replaced by one that logs no client IP and no query string at INFO. A test checks this.
+- [ ] R5: token tests include `alg=none`, HS/public-key confusion, unknown `kid` and expired tokens. All of them return the same 401.
+- [ ] R6 (server side): a retry after a lost refresh response follows the ADR-014 grace rule. Tested inside and just outside the grace window.
+- [ ] A15: security events (sign-in, refresh reuse detected, family revoked) are logged under the pseudonymous principal id, without email, IP or token.
 - [ ] Tests:
   - [ ] Unit: token issue and verify, rotation, reuse detection.
   - [ ] Integration: real Postgres.
@@ -54,5 +59,6 @@ As a guest, I want to use Capsule straight away without creating an account, so 
 - Plan approved:
 - Decisions:
   - Filed 2026-10-27 from the approved E1 plan.
+  - 2026-10-27: amended from E1-01 threat model (docs/security.md).
 - Numbers:
 - Left for later:

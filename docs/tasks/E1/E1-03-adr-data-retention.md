@@ -50,6 +50,7 @@ GDPR storage limitation needs a written retention period for every kind of data 
   - 2026-10-27, owner: guest data is deleted 30 days after last activity. Accounts are never deleted automatically. Postgres backups are kept for at most 30 days.
   - 2026-10-27, owner: sign-up uses email and password, with no email sending in E1 (no verification, no reset). So there is no way to reach a user by email, and the ADR must not rely on email for deletion or export confirmation.
   - 2026-10-27, owner: self-declared "I'm 18 or older" at sign-up. Store at most a confirmation timestamp, never a birth date.
+  - 2026-10-27: amended from E1-01 threat model (docs/security.md). The backup job is now card E1-23.
 - Numbers:
 - Left for later:
-  - Daily Postgres backup job with ≤ 30-day rotation (blueprint §12). File a card if no existing card owns it.
+  - Daily Postgres backup job with ≤ 30-day rotation (blueprint §12): card E1-23.
