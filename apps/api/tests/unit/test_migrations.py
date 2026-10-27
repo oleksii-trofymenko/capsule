@@ -3,6 +3,7 @@
 import pytest
 from alembic import command
 from alembic.script import ScriptDirectory
+from migrations.errors import sanitised_exit
 
 from core.config import ConfigError
 from tests.support import alembic_config
@@ -13,6 +14,12 @@ def test_revision_history_has_a_single_head() -> None:
     heads = ScriptDirectory.from_config(alembic_config()).get_heads()
 
     assert len(heads) == 1, f"expected one head, got {heads}"
+
+
+def test_sanitised_exit_keeps_only_the_type_of_a_non_database_error() -> None:
+    exit_ = sanitised_exit(KeyError("secret@example.invalid"))
+
+    assert str(exit_) == "migration failed: KeyError"
 
 
 def test_upgrade_without_database_url_fails_before_connecting(

@@ -1,3 +1,5 @@
+from collections.abc import Callable
+
 import pytest
 from hypothesis import given
 from hypothesis import strategies as st
@@ -103,6 +105,25 @@ def test_database_url_from_env_rejects_without_echoing(environ: dict[str, str]) 
     assert "hunter2" not in message
     assert "localhost" not in message
     assert "capsule" not in message
+
+
+@pytest.mark.parametrize(
+    "parse",
+    [
+        lambda url: normalise_database_url(url),
+        lambda url: database_url_from_env({"DATABASE_URL": url}),
+        lambda url: Settings.from_env(REQUIRED | {"DATABASE_URL": url}),
+    ],
+    ids=["normalise", "from-env-url-only", "settings"],
+)
+def test_unparseable_host_is_rejected_without_echoing(parse: Callable[[str], object]) -> None:
+    # urlsplit's own ValueError quotes the bracketed host.
+    with pytest.raises(ConfigError, match="DATABASE_URL") as caught:
+        parse("postgresql://u:pw@[secrethost]/db")
+
+    assert "secrethost" not in str(caught.value)
+    assert "pw" not in str(caught.value)
+    assert caught.value.__suppress_context__
 
 
 def test_secrets_are_hidden_in_repr() -> None:

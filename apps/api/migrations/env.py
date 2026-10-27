@@ -10,6 +10,7 @@ from alembic import context
 from sqlalchemy import create_engine, pool
 
 from core.config import database_url_from_env
+from migrations.errors import sanitised_exit
 
 # No ORM models yet. When tables arrive, point this at their MetaData for autogenerate.
 target_metadata = None
@@ -27,5 +28,8 @@ try:
         context.configure(connection=connection, target_metadata=target_metadata)
         with context.begin_transaction():
             context.run_migrations()
+except Exception as exc:
+    # No chained exception: its text would reach the `migrate` container log.
+    raise sanitised_exit(exc) from None
 finally:
     engine.dispose()

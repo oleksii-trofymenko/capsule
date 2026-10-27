@@ -29,7 +29,12 @@ def normalise_database_url(url: str) -> str:
     scheme, sep, rest = url.partition("://")
     if not sep or scheme.lower() not in _PG_SCHEMES:
         raise ValueError("must start with postgresql:// or postgresql+psycopg://")
-    if not urlsplit(url).hostname:
+    try:
+        hostname = urlsplit(url).hostname
+    except ValueError:
+        # The stdlib message quotes the host (e.g. a bracketed name); never pass it on.
+        raise ConfigError("Invalid settings: DATABASE_URL: host is not valid") from None
+    if not hostname:
         raise ValueError("must name a host")
     return f"postgresql+psycopg://{rest}"
 

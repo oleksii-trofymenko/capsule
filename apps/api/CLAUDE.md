@@ -32,7 +32,7 @@ To add a migration (from `apps/api`, with `DATABASE_URL` pointing at a local dat
 
 1. `uv run alembic revision -m "<what changes>"`, then write `upgrade()` and `downgrade()` by hand. `target_metadata` is `None` until ORM models exist, so `--autogenerate` has nothing to compare against yet.
 2. Remove unused imports and keep the history linear: `tests/unit/test_migrations.py` fails on two heads. If `main` gained a migration meanwhile, rebase and set `down_revision` to the new head.
-3. Additive and backward compatible: the old api must still run on the new schema. Indexes on large tables use `op.create_index(..., postgresql_concurrently=True)` inside `with op.get_context().autocommit_block():`.
+3. Additive and backward compatible: the old api must still run on the new schema. Indexes on large tables use `op.create_index(..., postgresql_concurrently=True)` inside `with op.get_context().autocommit_block():`, in a migration file of their own (runbook "Migrations").
 4. `make test`: the integration suite upgrades its `_test` database to head and runs upgrade → downgrade → upgrade on a fresh one.
 5. Never edit a migration that has reached `main`; write a new one.
 
