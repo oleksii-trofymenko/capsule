@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | review |
+| Status | done |
 | Owner | platform-engineer |
 | Reviewers | code-reviewer, security-engineer |
 | Estimate | S |
@@ -52,9 +52,12 @@ The SeaweedFS health check (`/healthz` on 8333) passes before the volume server 
   - `make up` warm (existing data): before 14.1–22.1 s, after 13.9–24.1 s. No measurable change; values cluster at ~14/19/24 s, a 5 s step.
   - CI `stack` job: before 69 s / 71 s (main runs 40484047910, 40412605083), after 77 s (run 40493413324); restart step 27–30 s → 35 s. Whole workflow 87–91 s → 98 s.
   - `check-seaweedfs.sh` all ok; `make lint` ok; `make test` 59 passed.
+- Review and QA (2026-10-27): code-reviewer approve, security-engineer approve (two low notes, filed as follow-ups below), QA pass on 6836bf7.
+  - QA, independent: immediate GET after `make up` 5/5 → 200; `compose up --wait` without the ready poll 5/5 → 200; control with the old check 3/5 → 500. Warm `make up` 19.2–24.6 s, cold 6.3 s, seaweedfs-only cold 4.9 s with `Volumes:0`. Probe history showed 2 failed polls (S3 up, no data node) before healthy. CI `stack` job 75 s.
 - Left for later:
   - The CI step catches a regression only when the race happens (~20–30% of restarts locally); it never fails falsely with the fix.
   - No dashboard or alert for seaweedfs health yet (observability epic, E2).
   - Recheck the `/dir/status` shape on the next SeaweedFS bump (comment in `compose.base.yml`).
   - Possible filer↔master location lag after registration; if the stack job flakes with 500, look there first.
+  - Runbook repro breaks in Git Bash if `MSYS_NO_PATHCONV=1` is exported (`--env-file $d/.env` becomes `C:\c\...`); add a one-line warning in a later docs card.
   - Follow-ups to file: E2-01 note on filtering seaweedfs CipherKey lines from the CI log dump; harden throwaway S3 client containers (`ci.yml` + `check-seaweedfs.sh`) with `--user 1000:1000 --cap-drop ALL --security-opt no-new-privileges`.
