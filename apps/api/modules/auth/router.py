@@ -3,6 +3,7 @@
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Body, Depends, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
@@ -37,6 +38,12 @@ async def guest(
     body: Annotated[GuestSignIn | None, Body()] = None,
 ) -> JSONResponse:
     if body is None:
+        # FastAPI maps both an empty body and JSON `null` to None. Only an empty body is absent;
+        # `null` is a present body that is not a GuestSignIn object (contracts/openapi.yaml).
+        if await request.body():  # read once by FastAPI already; this returns the cached bytes
+            raise RequestValidationError(
+                [{"loc": ("body",), "msg": "Input should be an object", "type": "model_type"}]
+            )
         new = await service.create_guest()
         session = GuestSession(**_pair(new.tokens), guest_credential=new.guest_credential)
         return _token_response(session, 201)

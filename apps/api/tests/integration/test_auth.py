@@ -206,6 +206,28 @@ async def test_invalid_body_gets_422(client: httpx.AsyncClient, body: dict[str, 
     assert_matches_contract(response, GUEST, "post")
 
 
+@pytest.mark.parametrize(
+    ("raw", "status"),
+    [(b"null", 422), (b" ", 422), (b"", 201)],
+    ids=["json null", "whitespace", "empty is absent"],
+)
+async def test_only_an_absent_or_empty_body_creates_a_guest(
+    app: FastAPI, client: httpx.AsyncClient, raw: bytes, status: int
+) -> None:
+    before = await sql(app, "SELECT count(*) FROM principals")
+
+    response = await client.post(GUEST, content=raw, headers={"Content-Type": "application/json"})
+
+    assert response.status_code == status
+    assert_matches_contract(response, GUEST, "post")
+    after = await sql(app, "SELECT count(*) FROM principals")
+    assert after[0][0] - before[0][0] == (1 if status == 201 else 0)
+    if raw == b"null":
+        assert response.json()["errors"] == [
+            {"loc": ["body"], "msg": "Input should be an object", "type": "model_type"}
+        ]
+
+
 async def test_principals_store_no_personal_data(app: FastAPI) -> None:
     async with client_for(app, lifespan=True):
         rows = await sql(

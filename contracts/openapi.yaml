@@ -87,7 +87,9 @@ paths:
       summary: Create a guest, or start a new session for an existing guest.
       description: |
         Without a body, creates a guest and returns its credential with the first token pair
-        (201). With `guest_credential`, returns a new token pair for that guest (200). An unknown
+        (201). An empty body (`Content-Length: 0`) counts as no body; any other body, JSON `null`
+        included, must be a `GuestSignIn` object or gets 422. With `guest_credential`, returns
+        a new token pair for that guest (200). An unknown
         credential, and one whose guest has had no activity within the guest retention, get the
         same 401. No personal data is stored.
 
