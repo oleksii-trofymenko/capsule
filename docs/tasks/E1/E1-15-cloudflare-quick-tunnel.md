@@ -23,7 +23,7 @@ As the project owner, I want to reach the API on the home PC from my phone over 
 - [ ] The API runs with the "behind tunnel" flag from E1-08, so `CF-Connecting-IP` is trusted only in this setup.
 - [ ] R2, peer side (`docs/security.md`): fix how the API identifies the cloudflared container as the socket peer. Its address on `edge` is dynamic, and traffic through the published host port can arrive from the bridge gateway, so use for example a dedicated network for cloudflared and api, or a resolved service name. The result goes into the API's trusted-peer config from E1-08. A check proves that requests through the published host port, or from another container on `edge`, are not treated as the tunnel.
 - [ ] R7 / T5: the runbook and `compose.tunnel.yml` comment state that the quick tunnel is for the E1 demo only, not external beta. E8-01 replaces it.
-- [ ] M6 (ADR-022): cloudflared runs with `--loglevel info`, never debug (request lines with client IPs and URLs appear only at debug), and with no access logging. A check asserts the flag in `compose.tunnel.yml`.
+- [ ] ADR-022 (logs): cloudflared runs with `--loglevel info`, never debug (request lines with client IPs and URLs appear only at debug), and with no access logging. A check asserts the flag in `compose.tunnel.yml`.
 - [ ] The runbook explains how to put the printed URL into the mobile env (`EXPO_PUBLIC_*`, E1-12) and that the URL changes every time cloudflared restarts.
 - [ ] Tests: `make up` plus the tunnel on the home PC, `GET /v1/health` through the public URL returns 200 from a phone on mobile data, and the check scripts pass. CI keeps passing without the tunnel.
 

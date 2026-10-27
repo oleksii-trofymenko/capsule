@@ -25,7 +25,7 @@ As a guest, I want to use Capsule straight away without creating an account, so 
 - [ ] A reusable dependency gives protected endpoints the current principal (guest or account).
 - [ ] Signing keys are read from config as ADR-015 requires; `env-init.sh` generates them if missing.
 - [ ] Logs carry no token, credential or IP at INFO level.
-- [ ] M6 (ADR-022): Postgres runs with `log_error_verbosity=terse` and `log_min_error_statement=panic`, set in the `postgres` service `command` in `infra/compose/compose.base.yml`. Error lines then carry no DETAIL, CONTEXT or STATEMENT with row values. A test asserts both settings with `SHOW`.
+- [ ] ADR-022 (logs): Postgres runs with `log_error_verbosity=terse` and `log_min_error_statement=panic`, set in the `postgres` service `command` in `infra/compose/compose.base.yml`. Error lines then carry no DETAIL, CONTEXT or STATEMENT with row values. A test asserts both settings with `SHOW`.
 - [ ] A4 (`docs/security.md`): the server stores only token hashes, never raw tokens. The same applies to guest credentials (§6). A test reads the tables and finds no raw value.
 - [ ] R4: the uvicorn access log is off, or replaced by one that logs no client IP and no query string at INFO. A test checks this.
 - [ ] R5: token tests include `alg=none`, HS/public-key confusion, unknown `kid` and expired tokens. All of them return the same 401.

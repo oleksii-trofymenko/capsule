@@ -1,6 +1,6 @@
 # ADR-022: Data retention, deletion and export: fixed upper bounds, our own purge jobs, backups that expire and a deletion ledger replayed on restore
 
-- Status: proposed
+- Status: accepted (2026-10-27)
 - Date: 2026-10-27
 - Deciders: Orchestrator, security-engineer, project owner
 - Related: E1-03, E1-05, E1-07, E1-08, E1-09, E1-10, E1-14, E1-15, E1-21, E1-23, E2, E3, E6; ADR-004, ADR-008, ADR-009, ADR-013 (planned), ADR-014, ADR-015; `docs/security.md` §6; `docs/design/flows.md` (F6 "Guest data", F10); blueprint §12
@@ -55,7 +55,7 @@ Every data class has an upper bound fixed here, with the actual value coming fro
 | Rate-limit keys: HMAC of IP or email; principal id for per-principal limits | Redis | TTL = the limit window, at most 24 h. No key without a TTL | Redis expiry. Per-principal keys are also removed on "Delete my data" | E1-08 |
 | SAQ job payloads and results | Redis | Payloads carry a principal id only, never content. Results kept at most 24 h | SAQ TTL | E1-10, later job cards |
 | LangGraph checkpoints | Postgres `agent_checkpoint` | Deleted when the consultation closes. An abandoned consultation's checkpoints are deleted 24 h after the last write. E3 may lengthen this by config, to 7 days at most, if resume needs it. Always deleted with the principal | SAQ job, plus a delete handler | E3 agent card (ADR-009, E0-11) |
-| Postgres server log | `postgres` container stderr, Docker `local` driver | Same as container logs (below). Runs with `log_error_verbosity = terse` and `log_min_error_statement = panic`, so error lines carry no DETAIL, CONTEXT or STATEMENT with row values. Sign-up checks for an existing email before inserting, so the unique-violation text, which contains the email, is never relied on | Rotation | E1-05 (settings), E1-07 (check before insert) |
+| Postgres server log | `postgres` container stderr, Docker `local` driver | Same as container logs (below). Runs with `log_error_verbosity = terse` and `log_min_error_statement = panic`, so error lines carry no DETAIL, CONTEXT or STATEMENT with row values. Sign-up checks for an existing email before inserting, so the unique-violation text, which contains the email, is never relied on. Some primary messages still echo input (for example an invalid UUID); request validation stops such input before it reaches Postgres | Rotation | E1-05 (settings), E1-07 (check before insert) |
 | cloudflared log | `cloudflared` container, Docker `local` driver | Same as container logs. Runs at `--loglevel info`, never debug, with no access logging, so no client IP or URL is written | Rotation | E1-15 |
 | Container logs (all services) | Docker `local` driver, 10 MB × 3 per service | Size cap only, until E2. Accepted because lines hold no email, password, token, credential, IP or body (`docs/security.md` §6), only the random principal id. That id links to nothing once the principal is deleted, and the `local` driver has no time-based rotation at €0. From E2, Loki keeps logs for at most 30 days | Rotation; Loki retention | E0-07 (done), E2 |
 | Sentry (consent only) | EU SaaS | Vendor free-plan retention, 30 days (to verify in E2). Per-id deletion on "Delete my data" in E2, or ADR-004 is amended so crash reports carry no id (flows.md E2 note) | Vendor retention, plus the Sentry API | E2 |
@@ -115,6 +115,7 @@ The move runs in the sign-up or sign-in request (ADR-014, R3). In that same tran
 - **Mounts:** the ledger directory is the only part of the external disk mounted into `api`. The backup directory is never mounted there.
 - **Integrity:** NTFS cannot enforce append-only, so the file is not trusted alone. Each backup run reconciles it from the table, and restore uses the union of both.
 - **Disk missing or unwritable:** `api` still starts and requests still succeed. The writer logs an error with the principal id only, and the table stays the record.
+- **Purge job:** the E1-10 guest purge runs in the worker, which has no ledger mount, so it does not write ledger rows. Restore step 3 re-runs the purge, which removes any guest that expired by age.
 - **Pruning:** after rotation, the backup job prunes the file and the table, removing only entries older than the creation time of the oldest backup actually on disk.
 
 ### Backups and restore
@@ -160,4 +161,4 @@ Deleted Redis keys can stay in the AOF file until its next rewrite. Deleted Post
   - E2 finds Sentry, PostHog or Langfuse retention or deletion differs from this table.
   - Backups move off-site or to the cloud.
   - E3 needs checkpoints kept longer than 7 days.
-  - E1-17 adds email (confirmation of deletion or export).
+  - E1-17 adds email (confirmation of deletion or export). Before E1-17 merges, a password or email change must survive a restore (for example recorded in the ledger, or a forced reset for accounts changed after the backup), so a restore cannot bring back an old password.

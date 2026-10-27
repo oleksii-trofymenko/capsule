@@ -27,4 +27,4 @@ One file per decision: `docs/adr/NNN-short-title.md`, from `000-template.md`. Ac
 | [019](019-ci-cd-github-actions.md) | CI/CD: GitHub Actions with one required gate check (`ci-ok`); GHCR and EAS for delivery | accepted | E0-05 |
 | [020](020-api-test-tooling.md) | API test tooling: httpx, PyYAML and jsonschema as dev-only dependencies | accepted | E0-06 |
 | [021](021-asgi-server-uvicorn.md) | uvicorn (no extras) as the ASGI server for the API | accepted | E0-07 |
-| [022](022-data-retention-deletion-export.md) | Data retention, deletion and export: fixed upper bounds, own purge jobs, backups expire in ≤ 30 days, deletion ledger replayed on restore | proposed | E1-03 |
+| [022](022-data-retention-deletion-export.md) | Data retention, deletion and export: fixed upper bounds, own purge jobs, backups expire in ≤ 30 days, deletion ledger replayed on restore | accepted | E1-03 |
