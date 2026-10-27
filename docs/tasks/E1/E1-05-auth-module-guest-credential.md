@@ -7,7 +7,7 @@
 | Reviewers | code-reviewer, security-engineer |
 | Estimate | M |
 | Metric | API latency (simple endpoints): p95 < 200 ms, p99 < 500 ms |
-| Depends on | E1-02, E1-04 |
+| Depends on | E1-02, E1-04, E1-05a, E1-05b |
 | ADRs | 005, 007, 014, 015 |
 | Design spec | `docs/design/flows.md` (F6 "Guest data") |
 
@@ -18,14 +18,13 @@ As a guest, I want to use Capsule straight away without creating an account, so 
 ## Acceptance criteria
 
 - [ ] Contract first: `contracts/openapi.yaml` gains the guest-credential, token-refresh and logout operations (paths per ADR-014, e.g. `POST /v1/auth/guest`, `POST /v1/auth/refresh`, `POST /v1/auth/logout`). Every error is RFC 9457.
-- [ ] `modules/auth` with a service interface. Alembic is initialised (first migration) with tables for principals (guest or account) and refresh-token families, plus `last_activity_at` on guests (used by E1-10).
+- [ ] `modules/auth` with a service interface. One migration (on the E1-05a baseline) adds principals (guest or account) with `last_activity_at` on every principal (ADR-022; used by E1-10), guest credentials, refresh families and refresh tokens with the ADR-014 states.
 - [ ] Issuing a guest credential stores no personal data: no IP, device id, email or analytics id.
 - [ ] Refresh rotates the token on every use. A reused refresh token returns 401 and revokes its whole family. Logout revokes the family.
 - [ ] Expired, malformed, wrong-key and revoked tokens get a 401 problem document, with no detail that helps an attacker.
 - [ ] A reusable dependency gives protected endpoints the current principal (guest or account).
-- [ ] Signing keys are read from config as ADR-015 requires; `env-init.sh` generates them if missing.
+- [ ] Signing keys are read from `/run/secrets/jwt_signing_keys` (E1-05b provides the file) as ADR-015 requires; `api` refuses to start with zero or more than two keys, and the error names no value.
 - [ ] Logs carry no token, credential or IP at INFO level.
-- [ ] ADR-022 (logs): Postgres runs with `log_error_verbosity=terse` and `log_min_error_statement=panic`, set in the `postgres` service `command` in `infra/compose/compose.base.yml`. Error lines then carry no DETAIL, CONTEXT or STATEMENT with row values. A test asserts both settings with `SHOW`.
 - [ ] A4 (`docs/security.md`): the server stores only token hashes, never raw tokens. The same applies to guest credentials (§6). A test reads the tables and finds no raw value.
 - [ ] R4: the uvicorn access log is off, or replaced by one that logs no client IP and no query string at INFO. A test checks this.
 - [ ] R5: token tests include `alg=none`, HS/public-key confusion, unknown `kid` and expired tokens. All of them return the same 401.
@@ -38,20 +37,19 @@ As a guest, I want to use Capsule straight away without creating an account, so 
   - [ ] Happy, failure and edge paths, including two concurrent refreshes with the same token.
 - [ ] Every new query ships `EXPLAIN ANALYZE` output in the PR.
 - [ ] Tell the Orchestrator: the refresh endpoint is the first one that takes user input, which triggers E1-06.
-- [ ] ADR-015: `env-init.sh` creates `secrets/jwt_signing_keys` (`kid=hex`, 32 random bytes) if missing and on every `make up` applies the layout (Git Bash: `icacls` user + SYSTEM with (OI)(CI), Administrators removed; Linux: `root:10001` 0440 via sudo), failing `make up` on any non-zero exit; the file is mounted into `api` only and `api` refuses to start with zero or more than two keys; CI masks each key value separately before applying the layout (after it, the runner reads the files only with `sudo`), fails if one appears in stack logs, and `docker compose config --quiet` passes in the lint job with no `secrets/` files present.
 
 ## Allowed files
 
 - `contracts/openapi.yaml`
 - `apps/api/modules/auth/**`, `apps/api/core/**`, `apps/api/migrations/**`, `apps/api/main.py`, `apps/api/pyproject.toml`, `apps/api/uv.lock`, `apps/api/alembic.ini`
 - `apps/api/tests/**`
-- `infra/compose/env-init.sh`, `infra/compose/test.env` (key variables only), `infra/compose/compose.base.yml` (`postgres` service `command` only)
-- ADR-015: `.env.example` (comment pointing to `secrets/` only); `infra/compose/compose.base.yml` (top-level `secrets:` block and the `secrets:` list of `api` only); `.github/workflows/ci.yml` (`stack` job: sudo layout step, per-value masking of `secrets/`, leaked-value log check only); `docs/runbooks/secret-leak.md` (new), `docs/runbooks/key-rotation.md` (new; JWT section)
+- `infra/compose/test.env` (key variables only), `.env.example` (new API variables only)
 
 ## Out of scope
 
 - Sign-up, sign-in, moving guest data (E1-07). Rate limits (E1-08). Purge job (E1-10). Mobile (E1-12).
-- If Alembic setup and the auth endpoints together go over a day, split Alembic into its own card first.
+- Alembic setup and Postgres logging (E1-05a). Key generation, layout and CI checks (E1-05b).
+- If the PR goes over ~400 lines, split refresh and logout into E1-05c.
 
 ## Analytics events
 
@@ -63,5 +61,6 @@ As a guest, I want to use Capsule straight away without creating an account, so 
 - Decisions:
   - Filed 2026-10-27 from the approved E1 plan.
   - 2026-10-27: amended from E1-01 threat model (docs/security.md).
+  - 2026-10-27: split into E1-05a (Alembic, migration runner, Postgres logging) and E1-05b (key plumbing); this card keeps the auth core. `last_activity_at` lives on `principals`. `POST /v1/auth/guest` is exempt from the idempotency-key rule: replaying a stored response would store the raw credential (A4); a lost response leaves an empty guest the purge removes.
 - Numbers:
 - Left for later:
