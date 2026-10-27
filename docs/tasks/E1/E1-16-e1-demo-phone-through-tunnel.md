@@ -7,7 +7,7 @@
 | Reviewers | code-reviewer |
 | Estimate | S |
 | Metric | n/a — verification card; it proves the E1 demo and records numbers for the epic report |
-| Depends on | E1-08, E1-13, E1-14, E1-15, E1-22 |
+| Depends on | E1-08, E1-13, E1-14, E1-15, E1-22, E1-26 |
 | ADRs | 016 |
 | Design spec | A2 and S1 from E1-11 |
 

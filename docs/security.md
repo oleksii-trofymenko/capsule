@@ -25,7 +25,7 @@ Owner decisions (2026-10-27):
 
 | Asset | Where it lives | Why it matters |
 | --- | --- | --- |
-| Guest credential | Phone: `expo-secure-store` only (ADR-003). Server: its revocable record | Holds all of a guest's consultation data. Stealing it means taking that data over |
+| Guest credential | Phone: `expo-secure-store` only (ADR-003). Server: its hashed record, deleted by the guest-data move, "Delete my data" or the retention purge (ADR-014 has no revocation) | Holds all of a guest's consultation data. Stealing it means taking that data over |
 | Access token | Phone memory and secure-store; request headers | Short-lived bearer. Theft = acting as the user until it expires |
 | Refresh token and its family | Phone secure-store; server keeps a hash and the family state | Long-lived. Theft = a lasting session unless reuse detection fires |
 | Account email | Postgres | Personal data and the sign-in identifier |
@@ -164,8 +164,8 @@ Planned E1 tables (names are set by E1-05/E1-07; the rules hold whatever the fin
 | accounts | email (normalised) | Yes | No (D4, accepted for E1) | Never |
 | accounts | password_hash | Yes (credential) | Hashed, not encrypted | Never |
 | accounts | age_confirmed_at | Yes | No | Never |
-| refresh families / tokens | token hash, family id, expires_at, revoked_at | Credential material | Hashed | Never the hash or the token; family id at DEBUG only |
-| guest credential record | credential hash, revoked_at | Credential material | Hashed | Never |
+| refresh families / tokens | token hash, family id, state, timestamps (idle and absolute limits), family revoked_at | Credential material | Hashed | Never the hash or the token; family id at DEBUG only |
+| guest credential record | credential hash | Credential material | Hashed | Never |
 | Redis rate-limit keys | HMAC of IP and email | Yes (pseudonymised) | No | Never |
 | Consultation tables (E3+) | flows.md "Guest data" list | Yes | Decided by the pre-beta encryption card | Never content; counts only |
 | SeaweedFS media (E6) | photos, audio | Yes, highest sensitivity | Chunk encryption, keys on the same disk (falls short of ADR-008 until the pre-beta encryption card, D4) | Never; not in traces either |
