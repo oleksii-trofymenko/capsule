@@ -9,12 +9,14 @@ from typing import Any
 
 import httpx
 import yaml
+from alembic.config import Config
 from fastapi import FastAPI
 from jsonschema import Draft202012Validator
 
 from core.config import Settings
 
 CONTRACT_PATH = Path(__file__).resolve().parents[3] / "contracts" / "openapi.yaml"
+ALEMBIC_INI = Path(__file__).resolve().parents[1] / "alembic.ini"
 REQUEST_ID = re.compile(r"[A-Za-z0-9-]{1,64}")
 
 
@@ -25,6 +27,11 @@ def dummy_settings(**overrides: object) -> Settings:
         "redis_url": "redis://cache.invalid:6379/0",
     }
     return Settings.model_validate(values | overrides)
+
+
+def alembic_config() -> Config:
+    """apps/api/alembic.ini; env.py takes the database from DATABASE_URL."""
+    return Config(ALEMBIC_INI)
 
 
 @asynccontextmanager

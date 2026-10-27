@@ -24,6 +24,18 @@ Read the root `CLAUDE.md` first. This file adds backend rules.
 - Background jobs (SAQ, ADR-006): timeout, bounded retries with backoff, deterministic job key, handler safe to run twice. Every cache and rate-limit key has a TTL; queue keys never do.
 - Served by `uvicorn main:create_app --factory --no-access-log` (ADR-021). Test tooling stays in the dev group (ADR-020).
 
+## Migrations
+
+Alembic (ADR-007), sync psycopg 3. `migrations/env.py` reads `DATABASE_URL` through `core/config.py`; the URL never goes into `alembic.ini`. `make up` applies migrations through the one-shot `migrate` Compose service before `api` starts.
+
+To add a migration (from `apps/api`, with `DATABASE_URL` pointing at a local database):
+
+1. `uv run alembic revision -m "<what changes>"`, then write `upgrade()` and `downgrade()` by hand. `target_metadata` is `None` until ORM models exist, so `--autogenerate` has nothing to compare against yet.
+2. Remove unused imports and keep the history linear: `tests/unit/test_migrations.py` fails on two heads. If `main` gained a migration meanwhile, rebase and set `down_revision` to the new head.
+3. Additive and backward compatible: the old api must still run on the new schema. Indexes on large tables use `op.create_index(..., postgresql_concurrently=True)` inside `with op.get_context().autocommit_block():`.
+4. `make test`: the integration suite upgrades its `_test` database to head and runs upgrade → downgrade → upgrade on a fresh one.
+5. Never edit a migration that has reached `main`; write a new one.
+
 ## Tests
 
 - Unit: domain logic, no network.

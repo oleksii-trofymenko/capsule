@@ -34,6 +34,17 @@ def normalise_database_url(url: str) -> str:
     return f"postgresql+psycopg://{rest}"
 
 
+def database_url_from_env(environ: Mapping[str, str]) -> str:
+    """DATABASE_URL alone, for tools that need no other settings (Alembic)."""
+    var = ENV_VARS["database_url"]
+    if var not in environ:
+        raise ConfigError(f"Invalid settings: {var}: Field required")
+    try:
+        return normalise_database_url(environ[var])
+    except ValueError as exc:
+        raise ConfigError(f"Invalid settings: {var}: {exc}") from None
+
+
 class Settings(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
