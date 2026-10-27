@@ -58,6 +58,8 @@ def _held(value: object) -> BaseException | None:
     if isinstance(value, BaseException):
         return value
     if isinstance(value, asyncio.Future) and value.done() and not value.cancelled():
+        # exception() marks the future retrieved: asyncio's own "never retrieved" warning will
+        # not fire for it later.
         return value.exception()
     return None
 
@@ -102,7 +104,8 @@ def _safe(value: object, depth: int = 0) -> object:
     if isinstance(value, dict):
         return {_safe(k, depth + 1): _safe(v, depth + 1) for k, v in value.items()}
     items = [_safe(item, depth + 1) for item in value]
-    return items if isinstance(value, list) else type(value)(items)
+    # The base type: a subclass such as a named tuple may not take one iterable argument.
+    return next(t for t in (list, tuple, set, frozenset) if isinstance(value, t))(items)
 
 
 def _db_texts(record: logging.LogRecord) -> dict[str, str]:

@@ -5,6 +5,7 @@ import io
 import json
 import logging
 import sys
+from collections import namedtuple
 
 import psycopg
 import pytest
@@ -134,6 +135,7 @@ def _chained() -> BaseException:
 
 
 IE = "IntegrityError (UniqueViolation)"
+P = namedtuple("P", "a b")
 GROUP = _raised(ExceptionGroup("g", [_integrity_error()]))
 
 
@@ -150,10 +152,11 @@ GROUP = _raised(ExceptionGroup("g", [_integrity_error()]))
         ("failed: %s", ([_integrity_error()],), None, "msg", f"failed: ['{IE}']"),
         ("failed: %s", ({"k": (_integrity_error(),)},), None, "msg", f"failed: {{'k': ('{IE}',)}}"),
         ("failed: %s", ({_integrity_error(): 1},), None, "msg", f"failed: {{'{IE}': 1}}"),
+        ("failed: %s", (P(1, _integrity_error()),), None, "msg", f"failed: (1, '{IE}')"),
     ],
     ids=[
         "exc_info", "arg", "mapping-arg", "msg", "chained", "group", "driver",
-        "list", "nested", "key",
+        "list", "nested", "key", "namedtuple",
     ],
 )  # fmt: skip
 def test_database_errors_are_described_never_printed(
