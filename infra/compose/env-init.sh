@@ -8,12 +8,13 @@
 # - applies the file layout on every run (skipped with `generate-only`, which CI uses to mask the
 #   values before the layout makes them unreadable). The folder is restricted before a key file is
 #   written, so a new key is born restricted (Windows: a key created in a run that then fails is removed).
-#   Windows: the .env temp file is restricted and checked before any secret is written to it.
+#   Windows: secrets/ is restricted first; the .env temp file is created inside it, restricted and
+#   checked before any secret is written to it. Unsupported systems stop before .env is created.
 #     Git Bash: secrets/ and .env readable only by the current user (SID) and SYSTEM (icacls),
 #               then verified from the SDDL (SIDs, not localised names);
 #     Linux:    secrets/ 0700, each secret file root:<consumer GID> 0440 (root or sudo);
 # - refuses to continue while any `change-me` value is left.
-# Writes go to a temp file in the same folder and are moved into place (atomic, mode 600).
+# Writes go to a temp file on the same volume and are moved into place (atomic, mode 600).
 # Every failure exits non-zero, which stops `make up`. Runbook: docs/runbooks/compose-stack.md.
 # Usage: env-init.sh <repo root> [generate-only]. Works in Git Bash and on Linux.
 set -euo pipefail
@@ -45,14 +46,15 @@ hex_value() {
 
 umask 077
 ktmp=
+tmp=
+aclout=
 created_key=
-tmp=$(mktemp "$root/.env.tmp.XXXXXX")
 layout=
 # A key created in this run is removed if the Windows layout then fails (its ACL is unverified).
 # On Linux it is born 0600 under umask 077 and kept, so the printed root commands still apply.
 cleanup() {
   local rc=$?
-  rm -f "$tmp" ${ktmp:+"$ktmp"}
+  rm -f ${tmp:+"$tmp"} ${ktmp:+"$ktmp"} ${aclout:+"$aclout"}
   if [ "$rc" -ne 0 ] && [ -n "$created_key" ] && [ "$layout" = windows ]; then
     rm -f "$jwt_file" && echo "env-init: removed secrets/jwt_signing_keys created in this failed run" >&2
   fi
@@ -64,14 +66,13 @@ sid=
 # acl_check <path>: the DACL may name only the user SID and SYSTEM. Read as SDDL (`icacls /save`),
 # which uses SIDs and fixed aliases (SY = S-1-5-18) whatever the display language.
 acl_check() {
-  local out sddl ace trustee n=0 name=${1#"$root"/}
-  out=$(mktemp "$root/.acl.tmp.XXXXXX")
-  if ! icacls "$(cygpath -w "$1")" /save "$(cygpath -w "$out")" /q >/dev/null; then
-    rm -f "$out"
-    die "icacls /save on $name failed"
-  fi
-  sddl=$(tr -d '\000\r' <"$out" | sed -n 2p)
-  rm -f "$out"
+  local sddl ace trustee n=0 name=${1#"$root"/}
+  # Global, so the EXIT trap removes it if anything below fails.
+  aclout=$(mktemp "$root/.acl.tmp.XXXXXX")
+  icacls "$(cygpath -w "$1")" /save "$(cygpath -w "$aclout")" /q >/dev/null || die "icacls /save on $name failed"
+  sddl=$(tr -d '\000\r' <"$aclout" | sed -n 2p)
+  rm -f "$aclout"
+  aclout=
   # The whole line must be a DACL of plain allow (A) or deny (D) entries: no other ACE type, no
   # nested parentheses (conditional ACEs), nothing after the last entry. Anything else fails closed.
   local shape='^D:[A-Z]*(\((A|D);[^()]*\))+$'
@@ -120,9 +121,11 @@ layout_windows_dir() {
 
 layout_windows_files() {
   local f
-  # Each file keeps only what it inherits from secrets/ (drops any explicit entry).
+  # Each file keeps only what it inherits from secrets/ (drops any explicit entry). A .env temp
+  # file left by a killed run keeps its own restricted list; the check below still covers it.
   for f in "$secrets_dir"/* "$secrets_dir"/.[!.]*; do
     [ -e "$f" ] || continue
+    case ${f##*/} in .env.tmp.*) continue ;; esac
     icacls "$(cygpath -w "$f")" /reset >/dev/null || die "icacls /reset on ${f#"$root"/} failed"
   done
   # Re-applied on every run: also covers a .env copied in by hand.
@@ -164,13 +167,20 @@ if [ "$mode" != generate-only ]; then
   esac
 fi
 
-# Windows: the temp file is restricted and checked while it is still empty, so every .env this run
-# moves into place (created or appended) is born restricted. A failure here exits before any secret
-# is written; the trap removes the temp file and an existing .env stays as it was.
+# Windows: secrets/ is restricted first and the .env temp file is created inside it (same volume, so
+# the move stays a rename), so the temp file is never readable by anyone else. It is then given its
+# own access list and checked while still empty, so every .env this run moves into place (created
+# or appended) is born restricted. A failure here exits before any secret is written; the trap
+# removes the temp file and an existing .env stays as it was.
 if [ "$layout" = windows ]; then
   windows_sid
+  mkdir -p "$secrets_dir"
+  layout_windows_dir
+  tmp=$(mktemp "$secrets_dir/.env.tmp.XXXXXX")
   restrict_file "$tmp"
   acl_check "$tmp"
+else
+  tmp=$(mktemp "$root/.env.tmp.XXXXXX")
 fi
 
 if [ ! -f "$env_file" ]; then
@@ -201,10 +211,13 @@ else
   fi
 fi
 unset value
+# Gone before layout_windows_files walks secrets/.
+rm -f "$tmp"
+tmp=
 
-# The folder is restricted first, so the key file below is born restricted.
+# The folder is restricted first, so the key file below is born restricted (Windows: done above).
 mkdir -p "$secrets_dir"
-[ -z "$layout" ] || "layout_${layout}_dir"
+[ "$layout" != linux ] || layout_linux_dir
 
 # JWT signing keys (ADR-014, ADR-015): one `kid=hexkey` line per key; the first line signs.
 if [ -e "$jwt_file" ] || [ -L "$jwt_file" ]; then
