@@ -1,4 +1,4 @@
-# E1-16 · E1 demo: sign up and sign in on a phone through the tunnel
+# E1-16 · E1 demo: sign up and sign in through the tunnel
 
 | Field | Value |
 | --- | --- |
@@ -13,19 +13,19 @@
 
 ## Why
 
-E1 ends with a demo (`docs/tasks/README.md`): a real phone, on mobile data, signs up and signs in against the home PC through the tunnel. This card checks it end to end and records numbers, so the epic report is based on evidence.
+E1 ends with a demo (`docs/tasks/README.md`): the app on an Android emulator and an iOS Simulator signs up and signs in against the home PC through the tunnel. This card checks it end to end and records numbers, so the epic report is based on evidence.
 
 ## Acceptance criteria
 
-- [ ] On a physical phone (development build, mobile data, not Wi-Fi), against `make up` plus the quick tunnel:
+- [ ] On an Android emulator (Windows PC) and an iOS Simulator (laptop), each using the public tunnel URL (never localhost or the LAN), against `make up` plus the quick tunnel (owner decision 2026-10-27: no physical phone, no paid Apple account):
   - [ ] Silent guest start.
   - [ ] Sign up with a made-up `@example.com` email and the 18+ checkbox.
   - [ ] Logout, then sign in.
   - [ ] Delete my data, then the app is a guest again.
   - [ ] Repeated wrong passwords get a 429.
   - [ ] Through the public URL, `/docs` and `/openapi.json` return 404, and an oversized request body is rejected with a problem document (E1-22).
-- [ ] Recorded numbers: p50/p95 latency of guest issue, sign-up, sign-in and refresh through the tunnel (≥ 20 requests each), compared with the same calls on the LAN. App cold start on the device.
-- [ ] The Maestro flow from E1-13 passes on the device or an emulator. If it cannot run through the tunnel, the reason is noted.
+- [ ] Recorded numbers: p50/p95 latency of guest issue, sign-up, sign-in and refresh through the tunnel (≥ 20 requests each), compared with the same calls on the LAN. App cold start on the Android emulator (indicative only; the release-build cold-start SLO needs a real device later).
+- [ ] The Maestro flow from E1-13 passes on at least the Android emulator. If it cannot run through the tunnel, the reason is noted.
 - [ ] The DB holds no leftover data from the demo account after deletion (SQL check, output in the card).
 - [ ] R10 (`docs/security.md`): at the demo, security-engineer reviews the accepted risks (P3, P4, T1, T4, T5, A3, A7, A9, A11, A14, D4) and records the outcome in this card.
 - [ ] Tests: this card is the test. Results go into this card's Numbers section.

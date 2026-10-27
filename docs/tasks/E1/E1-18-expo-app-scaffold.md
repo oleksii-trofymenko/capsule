@@ -17,7 +17,7 @@
 
 ## Acceptance criteria
 
-- [ ] An Expo project in `apps/mobile`, as ADR-001 requires: TypeScript strict, Expo Router, New Architecture, `expo-dev-client`. The Android development build installs on a physical phone, with steps in the runbook.
+- [ ] An Expo project in `apps/mobile`, as ADR-001 requires: TypeScript strict, Expo Router, New Architecture, `expo-dev-client`. The development build runs on the Android emulator (Windows PC) and the iOS Simulator (laptop), with steps in the runbook.
 - [ ] TanStack Query and Zustand wired (ADR-002).
 - [ ] `shared/storage`:
   - [ ] The only access to `expo-secure-store` (`AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY`) and MMKV.
@@ -47,7 +47,7 @@
 - Plan approved:
 - Decisions:
   - Filed 2026-10-27, added to the approved E1 plan: the plan assumed an Expo project existed, but `apps/mobile` has none.
-  - An iOS development build on a physical iPhone needs a paid Apple Developer account (outside the €0 budget). The E1 demo phone is assumed to be Android unless the owner says otherwise.
+  - 2026-10-27 (owner): UI is tested on the Android emulator (Windows PC) and the iOS Simulator (laptop). No physical iPhone build, so no paid Apple Developer account. The mid-range Android cold-start baseline waits for a real device; record the emulator number as indicative.
   - 2026-10-27: amended from E1-01 threat model (docs/security.md). Coverage of P1 and P2:
     - P1 is shared with E1-12. Here, the `shared/storage` criteria (secure-store `AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY` as the only access, MMKV excluded from backup, no direct imports) cover it, plus the added P1 criterion for secure-store backup exclusion and no credentials in MMKV. E1-12 covers "nothing in logs or breadcrumbs".
     - P2 is shared with E1-12. Here, `wipeAll()` clears both stores; E1-12 calls it on the first launch after install.

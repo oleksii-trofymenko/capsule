@@ -20,7 +20,7 @@ As a guest who liked a guide, I want to create an account with my email and a pa
 - [ ] Contract first: sign-up and sign-in operations in `contracts/openapi.yaml`. Both accept an optional guest credential to move guest data. Sign-up accepts an idempotency key.
 - [ ] Sign-up takes an email, a password (rules from ADR-014) and `age_confirmed: true`. Without the age confirmation it returns 422. The server stores only the confirmation time, never a birth date.
 - [ ] Emails are normalised before the uniqueness check. Passwords are hashed as ADR-014 requires and never logged or returned.
-- [ ] A7 (`docs/security.md`): sign-up with an email that is already registered returns a conflict problem document that offers sign-in (flows.md 3a), with no other account detail. The owner's sign-off on this enumeration trade-off is pending and must be recorded in Decisions before merge.
+- [ ] A7 (`docs/security.md`): sign-up with an email that is already registered returns a conflict problem document that offers sign-in (flows.md 3a), with no other account detail. Owner signed off on this trade-off on 2026-10-27.
 - [ ] Wrong email or password returns the same problem document, with similar timing.
 - [ ] Moving guest data: when a valid guest credential comes with the request, all guest-owned rows move to the account in one transaction and the guest credential is revoked. If any step fails, nothing moves and the guest credential still works. A guest credential that is revoked or belongs to someone else moves nothing. Nothing is ever matched by email, device or analytics id.
 - [ ] The response reports how many guest guides moved, which the app needs for `guest_guides_moved`. It is 0 until E3 adds guides.
