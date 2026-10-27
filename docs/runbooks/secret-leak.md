@@ -42,7 +42,7 @@ The file has one `kid=hexkey` line per key, at most two. The first line signs, a
    ```
 
 2. Decide by which line leaked. If you are not sure, treat every line as leaked.
-   - **The first line (signing key) leaked, or everything leaked:** replace the whole file with one new line. Every access token stops working at once, and clients refresh silently.
+   - **The first line (signing key) leaked, or everything leaked:** replace the whole file with one new line. Every access token stops working at once, and clients refresh silently. Replacing the whole file also drops the previous key, if there was one. That is stricter than ADR-015 asks, and it ends early the (at most 10 minutes of) tokens signed with the previous key.
 
      ```sh
      # Git Bash. Writes in place, so the folder ACL and the file stay the same. The key is
