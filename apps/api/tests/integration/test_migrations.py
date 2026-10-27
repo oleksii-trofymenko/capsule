@@ -183,6 +183,9 @@ def test_migration_blocked_on_a_lock_fails_fast_and_rolls_back(
         with blocker.connect() as conn:
             conn.execute(text("CREATE TABLE held (id int)"))
             conn.commit()
+            # Without lock_timeout the migration would wait forever: release the lock after 20 s
+            # instead, so a regression fails the assertions below rather than hanging.
+            conn.execute(text("SET idle_in_transaction_session_timeout = '20s'"))
             # A long-running reader: ALTER TABLE needs ACCESS EXCLUSIVE and must wait for it.
             conn.execute(text("LOCK TABLE held IN ACCESS SHARE MODE"))
             started = time.monotonic()
