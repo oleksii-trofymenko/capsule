@@ -43,5 +43,6 @@ Events and properties are listed in `docs/design/flows.md` (Analytics) until the
 | Mobile cold start | < 2 s, release build, mid-range Android | Sentry App Start |
 | Frame rate | 60 fps, < 1% slow frames | Sentry |
 | Crash-free sessions | > 99.5% | Sentry Release Health |
+| Data deletion | 100% of "Delete my data" requests complete on the server before the app confirms; 0 guest records older than the retention period + 24 h | Integration tests (E1-09) assert every principal-owned row is gone before the 2xx response; purge-job count of expired guests left after each run (E1-10; a structured log line until E2 metrics export). Rules: ADR-022 |
 
 Sentry metrics (crash-free sessions, mobile cold start, frame rate) cover only users who allowed crash reports (O2 / Settings → Privacy).

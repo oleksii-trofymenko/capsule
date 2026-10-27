@@ -182,7 +182,13 @@ Rules:
 
 ### Retention
 
-Placeholder. The retention ADR (E1-03) fills this in and links its table. Owner bounds already fixed: guest data 30 days after last activity; accounts until "Delete my data"; backups at most 30 days; media within 24 h and never backed up (ADR-008).
+[ADR-022](adr/022-data-retention-deletion-export.md) holds the full table, the definition of last activity and the export format. In short:
+
+- Guest data: deleted 30 days after last activity (config, upper bound 30). Accounts: never deleted automatically. An account's unsaved consultation history goes 30 days after its last activity; saved guides stay until "Delete my data".
+- Refresh families: expired or revoked ones are deleted within 24 h. Rate-limit keys: TTL at most 24 h. LangGraph checkpoints: 24 h after an abandoned consultation (at most 7 days by config).
+- Media: within 24 h, never backed up (ADR-008). Postgres backups: at most 30 days, encrypted, on the external disk only.
+- "Delete my data" removes all server data before it responds and writes the principal id to a deletion ledger (a table plus a file on the backup disk, kept 31 days). Every restore replays the ledger and the purges before the API takes traffic.
+- Sentry, PostHog and Langfuse retention and per-id deletion: to verify in E2.
 
 ### Erasure without a password
 
