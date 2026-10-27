@@ -47,7 +47,7 @@ Expected layout, and how to check it without printing values:
 
 - **Git Bash:** `secrets/` and `.env` are readable only by you and SYSTEM. There is no inheritance and no Administrators entry. Check with `MSYS2_ARG_CONV_EXCL='*' icacls secrets` and `icacls .env`. You should see two lines, `NT AUTHORITY\SYSTEM` and your user. On `secrets/` both have `(OI)(CI)(F)`, and the file shows `(I)(F)` for both. Inside the container the file appears as `root 0777`, so the host ACL is the only barrier.
 - **Linux:** `secrets/` is `0700` and owned by you. The key file is `root:10001 0440` (10001 = the api image's group). Check with `stat -c '%n %U:%g %a' secrets secrets/jwt_signing_keys`. Reading or editing it needs `sudo`.
-- **Both:** `$C exec -T api test -r /run/secrets/jwt_signing_keys && echo ok` while the stack runs.
+- **Both:** `MSYS_NO_PATHCONV=1 $C exec -T api test -r /run/secrets/jwt_signing_keys && echo ok` while the stack runs. Without `MSYS_NO_PATHCONV=1`, Git Bash rewrites `/run/...` into a Windows path and the check fails even when the file is fine. In the container the file shows as `root 0777`, which is expected.
 
 `make up` fails in env-init:
 

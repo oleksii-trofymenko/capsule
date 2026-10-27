@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | todo |
+| Status | review |
 | Owner | platform-engineer |
 | Reviewers | code-reviewer, security-engineer |
 | Estimate | S–M |
@@ -44,9 +44,21 @@ E1-05 signs access tokens with keys that must never sit in env, logs or CI artef
 
 ## Notes (filled while working)
 
-- Plan approved:
+- Plan approved: 2026-10-27 (Orchestrator). PR #28 (draft).
 - Decisions:
   - 2026-10-27 (plan): `generate-only` argument makes generate → mask → layout literal; Linux layout skipped when `stat` already shows `0:10001 440` (no sudo prompt every `make up`); a missing file path that Docker turned into a folder fails loudly; leak check runs before `make down` and after the restart.
-  - Filed 2026-10-27, split out of E1-05 (infra half of the ADR-015 criterion).
+  - 2026-10-27 (build): paths go to `icacls` through `cygpath -w`. `MSYS2_ARG_CONV_EXCL='*'` turns off conversion for every argument, so a POSIX root such as `/tmp/...` would otherwise reach icacls unconverted.
+  - 2026-10-27 (build): CI masking fails on any file in `secrets/` without a masking rule, so E1-08, E1-17 and E1-24 cannot add a secret and skip masking. Logs go into a variable for the leak check, not a pipe: with pipefail, `grep -q` closing the pipe early would hide a hit.
+  - 2026-10-27 (build): the consumer GID is one constant in `env-init.sh` (`API_GID=10001`, from `apps/api/Dockerfile`).
+  - 2026-10-27 (build): container paths in Git Bash need `MSYS_NO_PATHCONV=1` (`/run/secrets/...` is otherwise rewritten to `C:/Program Files/Git/run/...`). Found during local verification; the runbook check carries it.
+  - 2026-10-27 (build): local `make up` timings used an isolated project (`capsule-e105b`, port 18005), because E1-05a shared the same Docker Desktop on project `capsule`. The owner's own checkout gets its `secrets/` on the first `make up` after merge.
 - Numbers:
+  - `make up` from a fresh `.env` (images and build cache warm, Git Bash, Docker Desktop 29.8.2): before 7 s (main `1799a6d`), after 7 s. A second run with existing files: 2 s, key file and `.env` unchanged (sha256).
+  - CI `stack` job: before 69 s (run 40534412700, main), after 73 s (run 40536049099, PR #28). Whole run 1 m 31 s → 1 m 32 s. All checks green, `ci-ok` pass.
+  - CI evidence: `secrets/jwt_signing_keys: 1 value(s) masked`; `secrets runner:1001 700`, `secrets/jwt_signing_keys root:10001 440`; the runner cannot read it, `sudo test -r` can; `api reads its file secret` pass; `none of the 1 generated value(s) appear in the logs` after the restart (and the check before `make down` passed).
+  - Lint job `compose config --quiet` with no `secrets/`: pass on ubuntu-24.04 image 20261012.334.1, Docker Compose 2.38.2 (and locally on Compose v5.5.1).
+  - Local Git Bash: `icacls` on `secrets/`, the key file and `.env` shows only SYSTEM and the user; a uid 10001 `--read-only` container reads the file; in the stack only `api` has `/run/secrets/jwt_signing_keys`; the Linux branch was checked in a container (root, non-root without sudo, already correct).
+  - "Secrets in repository" stays 0 (`make lint`, gitleaks history).
 - Left for later:
+  - Key-age panel with an alert above 100 days (ADR-015 "We will monitor"): E2, when Grafana exists. Until then `key-rotation.md` says to note the date by hand.
+  - ADR-015 asks CI to grep every masked value, including the `.env` values. This card greps only the `secrets/` values (its scope). Extend the pattern file when E1-08 moves the SeaweedFS keys to `secrets/`, or with a small card.
