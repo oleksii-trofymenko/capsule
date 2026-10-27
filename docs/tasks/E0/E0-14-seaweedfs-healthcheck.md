@@ -4,7 +4,7 @@
 | --- | --- |
 | Status | review |
 | Owner | platform-engineer |
-| Reviewers | code-reviewer |
+| Reviewers | code-reviewer, security-engineer |
 | Estimate | S |
 | Metric | n/a — stack reliability (failed reads after restart) |
 | Depends on | E0-12 |
@@ -56,3 +56,5 @@ The SeaweedFS health check (`/healthz` on 8333) passes before the volume server 
   - The CI step catches a regression only when the race happens (~20–30% of restarts locally); it never fails falsely with the fix.
   - No dashboard or alert for seaweedfs health yet (observability epic, E2).
   - Recheck the `/dir/status` shape on the next SeaweedFS bump (comment in `compose.base.yml`).
+  - Possible filer↔master location lag after registration; if the stack job flakes with 500, look there first.
+  - Follow-ups to file: E2-01 note on filtering seaweedfs CipherKey lines from the CI log dump; harden throwaway S3 client containers (`ci.yml` + `check-seaweedfs.sh`) with `--user 1000:1000 --cap-drop ALL --security-opt no-new-privileges`.

@@ -322,7 +322,8 @@ jobs:
         run: npm audit --prefix apps/mobile --audit-level=high
 
   # E0-13: build the api image and run the real Compose stack (`make up`) with throwaway secrets,
-  # then the SeaweedFS lockdown check and a restart that must keep Postgres and Redis data.
+  # then the SeaweedFS lockdown check and a restart that must keep Postgres, Redis and SeaweedFS
+  # data (E0-14: the S3 object must be readable right after `make up`).
   # Triage: docs/runbooks/compose-stack.md, "CI job `stack` fails".
   stack:
     name: stack (compose smoke)
@@ -378,11 +379,17 @@ jobs:
                 esac
                 echo " $(head -c 300 /tmp/body | tr -d "\r\n")"' sh "$1"
           }
-          set -a; . ./.env; set +a
+          # Only the two S3 keys leave .env, for `docker run -e` above.
+          SEAWEEDFS_S3_ACCESS_KEY=$(sed -nE 's/^SEAWEEDFS_S3_ACCESS_KEY=(.*)$/\1/p' .env)
+          SEAWEEDFS_S3_SECRET_KEY=$(sed -nE 's/^SEAWEEDFS_S3_SECRET_KEY=(.*)$/\1/p' .env)
+          export SEAWEEDFS_S3_ACCESS_KEY SEAWEEDFS_S3_SECRET_KEY
           psql "CREATE TABLE ci_smoke (v text); INSERT INTO ci_smoke VALUES ('kept');"
           test "$($COMPOSE exec -T redis redis-cli SET ci:smoke kept)" = "OK"
-          put=$(s3 put)
-          [ "${put%% *}" = "200" ] || { echo "::error::S3 PUT before restart: $put"; exit 1; }
+          put=$(s3 put) || true # an empty result is reported below, not lost to bash -e
+          if [ "${put%% *}" != "200" ]; then
+            echo "::error::S3 PUT before restart: ${put:-<none>} (want 200); see docs/runbooks/compose-stack.md"
+            exit 1
+          fi
           make down
           make up
           got_s3=$(s3 get) || true # an empty result is reported below, not lost to bash -e

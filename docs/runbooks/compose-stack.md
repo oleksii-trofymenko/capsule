@@ -167,7 +167,7 @@ The seaweedfs health check passes only when the S3 API answers and the volume se
   R="docker compose --project-name capsule-repro --env-file $d/.env -f infra/compose/compose.base.yml"
   s3() { $R exec -T seaweedfs sh -c 'curl -s -w " %{http_code}\n" --aws-sigv4 aws:amz:us-east-1:s3 --user "$AWS_ACCESS_KEY_ID:$AWS_SECRET_ACCESS_KEY" "$@"' sh "$@"; }
   $R up --detach --wait seaweedfs
-  s3 -X PUT http://127.0.0.1:8333/ci-smoke; echo kept | s3 -T - http://127.0.0.1:8333/ci-smoke/o
+  s3 -X PUT http://127.0.0.1:8333/ci-smoke; printf kept | s3 -T - http://127.0.0.1:8333/ci-smoke/o
   $R down && $R up --detach --wait seaweedfs
   s3 http://127.0.0.1:8333/ci-smoke/o   # must print kept 200
   $R down --volumes; rm -rf "$d"
