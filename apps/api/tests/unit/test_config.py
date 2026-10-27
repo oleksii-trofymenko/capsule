@@ -28,6 +28,7 @@ def test_from_env_reads_variables_and_applies_defaults() -> None:
     assert settings.ready_probe_timeout_s == 1.0
     assert settings.database_connect_timeout_s == 5
     assert settings.redis_socket_timeout_s == 5.0
+    assert settings.guest_retention_days == 30
     assert settings.signing_keys == TEST_SIGNING_KEYS
 
 
@@ -39,6 +40,7 @@ def test_from_env_reads_optional_variables() -> None:
             "READY_PROBE_TIMEOUT_S": "2.5",
             "DATABASE_CONNECT_TIMEOUT_S": "3",
             "REDIS_SOCKET_TIMEOUT_S": "0.75",
+            "GUEST_RETENTION_DAYS": "7",
         }
     )
 
@@ -46,6 +48,7 @@ def test_from_env_reads_optional_variables() -> None:
     assert settings.ready_probe_timeout_s == 2.5
     assert settings.database_connect_timeout_s == 3
     assert settings.redis_socket_timeout_s == 0.75
+    assert settings.guest_retention_days == 7
 
 
 def test_missing_variable_is_named() -> None:
@@ -80,6 +83,8 @@ def test_invalid_url_is_rejected_without_echoing_it(name: str, value: str) -> No
         ("DATABASE_CONNECT_TIMEOUT_S", "1.5"),  # libpq takes whole seconds
         ("REDIS_SOCKET_TIMEOUT_S", "-1"),
         ("REDIS_SOCKET_TIMEOUT_S", "61"),
+        ("GUEST_RETENTION_DAYS", "0"),
+        ("GUEST_RETENTION_DAYS", "31"),  # ADR-022 upper bound
     ],
 )
 def test_timeouts_must_be_sane_numbers(name: str, value: str) -> None:

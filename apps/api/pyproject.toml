@@ -11,6 +11,7 @@ dependencies = [
   "redis>=8.1,<9",                    # ADR-006
   "uvicorn>=0.54,<1",                 # ADR-021: ASGI server (no [standard] extras)
   "alembic>=1.20.0,<1.21",            # ADR-007: schema migrations
+  "pyjwt>=2.15.1,<3",                 # ADR-023: HS256 access tokens (no extras)
 ]
 
 [dependency-groups]

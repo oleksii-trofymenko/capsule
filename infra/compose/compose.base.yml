@@ -26,6 +26,7 @@ services:
       READY_PROBE_TIMEOUT_S: ${READY_PROBE_TIMEOUT_S:-1.0}
       DATABASE_CONNECT_TIMEOUT_S: ${DATABASE_CONNECT_TIMEOUT_S:-5}
       REDIS_SOCKET_TIMEOUT_S: ${REDIS_SOCKET_TIMEOUT_S:-5.0}
+      GUEST_RETENTION_DAYS: ${GUEST_RETENTION_DAYS:-30}
     # ADR-015: file secrets at /run/secrets/<name>; api is the only consumer.
     secrets: [jwt_signing_keys]
     ports:

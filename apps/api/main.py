@@ -8,12 +8,13 @@ from fastapi import FastAPI
 
 from core import health
 from core.config import ConfigError, Settings
-from core.db import create_engine
+from core.db import create_engine, create_sessionmaker
 from core.errors import install_problem_handlers
 from core.logging import configure_logging
 from core.middleware import RequestContextMiddleware
 from core.redis_client import create_redis
 from core.signing_keys import load_signing_keys
+from modules import auth
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -25,6 +26,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.engine = create_engine(settings)
+        app.state.sessionmaker = create_sessionmaker(app.state.engine)
         app.state.redis = create_redis(settings)
         try:
             yield
@@ -49,7 +51,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     app.state.settings = settings
     app.state.probe_tasks = health.ProbeTasks()
+    app.state.tokens = auth.TokenService(settings)
     install_problem_handlers(app)
+    # Added first, so it runs inside the request context and sees the final status.
+    app.add_middleware(auth.LastActivityMiddleware)
     app.add_middleware(RequestContextMiddleware)
     app.include_router(health.router)
+    app.include_router(auth.router)
     return app
