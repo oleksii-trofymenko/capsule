@@ -18,6 +18,7 @@ As an account holder who forgot my password, I want to reset it from my email, s
 ## Acceptance criteria
 
 - [ ] A new ADR picks a transactional email service with a free tier that covers beta volume (€0 budget, EU data processing or adequate safeguards, DPA available). It also covers what happens when the free quota runs out.
+- [ ] Email verification at sign-up (owner decision 2026-10-27): contract operations to send and confirm a verification link; the token is single-use, short-lived and stored only as a hash; unverified accounts keep working, and the account records `email_verified_at`. Decide in the plan whether sign-up with a registered email then answers "check your email" instead of the A7 conflict, and update `docs/security.md` A7 if so.
 - [ ] Contract first: request-reset and confirm-reset operations. Requesting a reset always returns the same response whether or not the email exists.
 - [ ] The reset token is single-use, short-lived and stored only as a hash. A successful reset revokes every refresh family of the account.
 - [ ] Rate limits per IP and per email on reset requests (reusing E1-08).
@@ -29,13 +30,14 @@ As an account holder who forgot my password, I want to reset it from my email, s
 ## Allowed files
 
 - `contracts/openapi.yaml`, `apps/api/modules/auth/**`, `apps/api/core/**`, `apps/api/migrations/**`, `apps/api/pyproject.toml`, `apps/api/uv.lock`, `apps/api/tests/**`
-- `docs/adr/0xx-*.md`, `docs/adr/README.md`, `docs/design/flows.md` (Analytics table only), `infra/compose/env-init.sh`
+- `docs/security.md` (A7 row only), `docs/adr/0xx-*.md`, `docs/adr/README.md`, `docs/design/flows.md` (Analytics table only), `infra/compose/env-init.sh`
 - ADR-015: `infra/compose/compose.base.yml` (`email_provider_api_key` secret entry and the sending service's `secrets:` list only); `docs/runbooks/secret-leak.md` (email-provider row)
 
 ## Out of scope
 
 - Mobile reset screens. File a mobile card with a design spec when this card is planned.
-- Email verification at sign-up (not decided; ask the owner if needed). Marketing email.
+- Marketing email. Mobile verification screens (same mobile follow-up card as reset).
+- If reset plus verification goes over a day, split verification into its own card at planning.
 
 ## Analytics events
 
@@ -45,6 +47,7 @@ As an account holder who forgot my password, I want to reset it from my email, s
 
 - Plan approved:
 - Decisions:
+  - 2026-10-27 (owner): email verification at sign-up is added to this card.
   - Filed 2026-10-27 on the owner's decision: E1 sends no email; password reset with a free-tier email service comes before external beta, with no dependency on the E1 demo.
 - Numbers:
 - Left for later:
