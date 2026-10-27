@@ -41,5 +41,10 @@ Before external beta, not part of the E1 demo:
 - E1-17 (password reset by email).
 - E1-24 (email field encryption) after E1-04 and E1-07.
 - E1-25 (host disk and SeaweedFS keys) after E1-04.
+- E1-30 (least-privilege S3 identity for `api`) after E1-25, and before any card gives `api` S3 access.
+
+Hardening follow-ups from E1-05a and E1-05b, small and independent:
+- E1-26 (separate Postgres roles) after E1-05, before E1-16.
+- E1-27 (migration lock timeout), E1-28 (`REDIS_URL` error leak) and E1-29 (`.env` ACL after a failed first run) at any time.
 
 E8-01 and E8-02 (named tunnel, pinning, bundle scan) wait for the owner's domain purchase. E8-01 may be pulled forward before E3 streaming, because quick tunnels do not support SSE.
