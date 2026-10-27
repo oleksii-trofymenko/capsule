@@ -25,7 +25,7 @@ As a user with an account, I want my saved guides to survive a disk failure on t
 - [ ] A failed backup is visible: a non-zero exit and a log line. A Grafana alert comes later in E2.
 - [ ] `docs/metrics.md` gains the backup-restore SLO with how it is measured. The runbook describes backup, restore and key loss.
 - [ ] Tests: the rotation and exclusion checks run in CI or `make test` on fake files; the drill runs once by hand on the home PC.
-- [ ] ADR-015: dumps are encrypted with `age` (pinned by version and checksum, 7-day rule) to the public recipient in `.env`; the private identity never sits on the host or the backup disk (password manager + USB); the drill passes it in through stdin or a temp file deleted afterwards; a check fails if `AGE-SECRET-KEY-` is found in the repo or at the backup destination.
+- [ ] ADR-015: dumps are encrypted with `age` (pinned by version and checksum, 7-day rule) to the public recipient `BACKUP_AGE_RECIPIENT` in `.env`; the private identity never sits on the host or the backup disk (password manager + USB); the drill passes it in through stdin or a temp file deleted afterwards; a check fails if the full-key pattern `AGE-SECRET-KEY-1[QPZRY9X8GF2TVDW0S3JN54KHCE6MUA7L]{58}` matches anything in the repo or at the backup destination.
 
 ## Allowed files
 

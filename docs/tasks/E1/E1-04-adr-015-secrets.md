@@ -27,7 +27,7 @@ E1 adds the first long-lived application secrets: JWT signing keys, and later th
 
 ## Allowed files
 
-- `docs/adr/015-*.md`, `docs/adr/README.md` (index row only)
+- `docs/adr/015-*.md`, `docs/adr/README.md` (index row only); the ADR-015 criterion and Allowed files lines only in `docs/tasks/E1/E1-05-auth-module-guest-credential.md`, `docs/tasks/E1/E1-08-rate-limiting.md`, `docs/tasks/E1/E1-17-password-reset-email.md`, `docs/tasks/E1/E1-23-postgres-backups.md`, `docs/tasks/E1/E1-24-email-field-encryption.md`, `docs/tasks/E1/E1-25-disk-encryption-seaweedfs-keys.md`
 
 ## Out of scope
 
