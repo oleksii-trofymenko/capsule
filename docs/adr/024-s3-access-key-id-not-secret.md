@@ -1,6 +1,6 @@
 # ADR-024: The SeaweedFS S3 access key ID is an identifier; one SeaweedFS startup log line may contain it
 
-- Status: proposed
+- Status: accepted (2026-10-27)
 - Date: 2026-10-27
 - Deciders: Orchestrator, security-engineer, platform-engineer
 - Related: E1-05b, ADR-015, ADR-008, ADR-019, E1-25, E2-01

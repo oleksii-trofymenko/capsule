@@ -32,6 +32,19 @@ The body lists the dependencies that are `failing`.
 
 `docker inspect capsule-api-1 --format '{{.RestartCount}} {{.State.Health.Status}}'`, then the API logs. A config error in `.env` makes it exit on start: fix `.env`, then `make up`.
 
+## Migrations (E1-05a)
+
+`make up` runs the one-shot `migrate` service (`alembic upgrade head`, same image as the api) after Postgres is healthy. The api starts only if it exits 0. Afterwards `$C ps --all` shows `migrate` as `Exited (0)`, which is normal. It has no health check on purpose: the image's check probes `/v1/health`, which a one-shot never serves.
+
+- A successful run prints nothing. To see the current revision: `$C run --rm --no-deps migrate alembic current` (Postgres must be up).
+- `make up` fails and names `migrate` (`didn't complete successfully`), and `api` does not start. **On an upgrade this is a full outage:** Compose has already stopped the running `api` to recreate it, and it stays down until `migrate` succeeds. Fix forward, or check out the last good commit and run `make up`. Read `$C logs migrate`:
+  - `ConfigError: Invalid settings: DATABASE_URL: ...`: `.env` is wrong (see "Credentials in `.env`" below). The value is never printed.
+  - `migration failed: <type>; sqlstate=<code>; constraint=<name>` is all a failed run prints (ADR-022). The driver message, which can quote row values, is dropped on purpose. Look the SQLSTATE up in the Postgres error codes table, for example `23505` unique violation or `42P07` duplicate table.
+  - `migration failed: OperationalError (OperationalError)` with no SQLSTATE: connecting failed. The reason is in `$C logs postgres` (for example `password authentication failed for user`). See "Credentials in `.env`" below.
+  - Any other error is a broken migration. A normal migration runs in one transaction, so Postgres rolls the whole run back and nothing is half-applied. Fix the migration in a PR, then `make up`. Never edit `alembic_version` by hand.
+  - **Exception:** steps inside `autocommit_block()` (for example `CREATE INDEX CONCURRENTLY`) commit on their own. A failed concurrent index build leaves an `INVALID` index behind. Find it with `SELECT indexrelid::regclass FROM pg_index WHERE NOT indisvalid;`, drop it with `DROP INDEX CONCURRENTLY <name>;`, then run `make up` again. Keep each autocommit block in a migration file of its own, so a failure cannot leave other changes of the same file applied.
+- Downgrades are for development only: `$C run --rm --no-deps migrate alembic downgrade -1`. On data you keep, write a new forward migration instead.
+
 ## Credentials in `.env`
 
 - Postgres stores its user and password in its volume on the first start only. Editing them in `.env` afterwards breaks the login: the API logs `OperationalError` on the readiness check. To rotate the password: `$C exec postgres psql -U capsule -c "ALTER USER capsule PASSWORD '<new>'"`, update `.env`, then `make up`.
@@ -91,6 +104,7 @@ The `stack (compose smoke)` job in `.github/workflows/ci.yml` runs on PRs that t
 - `Pull images`: Docker Hub or GHCR is unreachable or rate-limited (`toomanyrequests`). Re-run the job. If it keeps failing, check the pins with `bash infra/compose/check-pins.sh`.
 - `Build api image`: the Dockerfile or `apps/api/uv.lock` is broken. Reproduce with `$C build api`.
 - `make up`: open `Dump stack logs` (`ps --all`, then the last 200 lines from each service) and follow "`make up` fails or times out" above. `not ready after 60 s` means a dependency failed `/v1/ready`. The api log names it.
+- `Postgres log settings (ADR-022)`: the `postgres` service `command` in `compose.base.yml` lost `log_error_verbosity=terse` or `log_min_error_statement=panic`. Put both back; without them Postgres error lines can carry row values (DETAIL, STATEMENT).
 - `SeaweedFS lockdown check`: see "SeaweedFS exposure check fails" below. Treat any `FAIL` as a security regression in the PR.
 - `Restart keeps Postgres, Redis and SeaweedFS data`: after `make down` / `make up`, the job reads back a Postgres row, a Redis key and an S3 object, and expects `postgres: kept  redis: kept  s3: 200 kept`. A missing value means a volume, `user:`, `read_only` or Redis AOF change lost data on restart. `s3: 500 ...InternalError...` means the seaweedfs health check passed before the volume server registered: see "S3 reads fail right after a restart" below. The S3 read is tried once, on purpose. Do not add a retry. Reproduce it under a throwaway project, never `capsule`. Only postgres and redis start, so port 8000 stays free. Tested in Git Bash:
 

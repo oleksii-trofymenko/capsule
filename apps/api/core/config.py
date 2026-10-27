@@ -29,9 +29,25 @@ def normalise_database_url(url: str) -> str:
     scheme, sep, rest = url.partition("://")
     if not sep or scheme.lower() not in _PG_SCHEMES:
         raise ValueError("must start with postgresql:// or postgresql+psycopg://")
-    if not urlsplit(url).hostname:
+    try:
+        hostname = urlsplit(url).hostname
+    except ValueError:
+        # The stdlib message quotes the host (e.g. a bracketed name); never pass it on.
+        raise ConfigError("Invalid settings: DATABASE_URL: host is not valid") from None
+    if not hostname:
         raise ValueError("must name a host")
     return f"postgresql+psycopg://{rest}"
+
+
+def database_url_from_env(environ: Mapping[str, str]) -> str:
+    """DATABASE_URL alone, for tools that need no other settings (Alembic)."""
+    var = ENV_VARS["database_url"]
+    if var not in environ:
+        raise ConfigError(f"Invalid settings: {var}: Field required")
+    try:
+        return normalise_database_url(environ[var])
+    except ValueError as exc:
+        raise ConfigError(f"Invalid settings: {var}: {exc}") from None
 
 
 class Settings(BaseModel):

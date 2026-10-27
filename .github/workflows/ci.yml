@@ -437,6 +437,18 @@ jobs:
         run: make up
       - name: api reads its file secret
         run: $COMPOSE exec -T api test -r /run/secrets/jwt_signing_keys
+      # ADR-022 (E1-05a): error lines without DETAIL, CONTEXT or STATEMENT. Checked here because
+      # the integration job's service containers cannot take the postgres `command`.
+      - name: Postgres log settings (ADR-022)
+        run: |
+          show() { $COMPOSE exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -tA -c "SHOW $1"' sh "$1"; }
+          verbosity=$(show log_error_verbosity)
+          statement=$(show log_min_error_statement)
+          echo "log_error_verbosity=$verbosity log_min_error_statement=$statement"
+          if [ "$verbosity" != "terse" ] || [ "$statement" != "panic" ]; then
+            echo "::error::Postgres must run with log_error_verbosity=terse and log_min_error_statement=panic (ADR-022)"
+            exit 1
+          fi
       - name: SeaweedFS lockdown check
         run: bash infra/compose/check-seaweedfs.sh
       # The S3 read right after `make up` is the E0-14 regression test: one try, no retry. A retry
