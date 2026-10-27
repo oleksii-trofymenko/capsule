@@ -17,15 +17,15 @@ E1-05 signs access tokens with keys that must never sit in env, logs or CI artef
 
 ## Acceptance criteria
 
-- [ ] ADR-015: `env-init.sh` creates `secrets/jwt_signing_keys` (`kid=hex`, 32 random bytes, `kid` = UTC date) if missing and never overwrites it.
-- [ ] On every `make up` it applies the layout and fails `make up` on any non-zero exit:
-  - [ ] Git Bash: `MSYS2_ARG_CONV_EXCL='*'`; `icacls` grants the user SID (from `whoami /user`) and SYSTEM with (OI)(CI) on `secrets/`, inheritance removed, Administrators removed; `.env` gets plain `F` for the same two, inheritance and Administrators removed. The SID comes from `whoami.exe /user` via `cygpath` (Git Bash's own `whoami` cannot).
-  - [ ] Linux: `secrets/` 0700; the key file `root:10001` 0440 via sudo; a clear error when sudo is missing.
-- [ ] The file is mounted as a Compose file secret into `api` only (top-level `secrets:` block and the `api` `secrets:` list). No other service gets it.
-- [ ] CI `stack` job: generate (`env-init.sh . generate-only`), then mask each key value separately, then apply the layout (after it, the runner reads the files only with `sudo`); fail if any generated value appears in the stack logs. `.env` and `secrets/` are never uploaded. A step proves `api` can read the file: `exec -T api test -r /run/secrets/jwt_signing_keys`.
-- [ ] `docker compose config --quiet` passes in the lint job with no `secrets/` files present (confirm on the runner's Compose version).
-- [ ] `docs/runbooks/secret-leak.md` (new, JWT row and the general steps from ADR-015) and `docs/runbooks/key-rotation.md` (new, JWT section: 90-day manual rotation, 15-minute wait, restore uses the leak procedure).
-- [ ] Tests: `make lint`, `make test`, CI green; a CI run shows the masked values never appear; locally on Git Bash, `icacls secrets` output in the PR shows only the user and SYSTEM.
+- [x] ADR-015: `env-init.sh` creates `secrets/jwt_signing_keys` (`kid=hex`, 32 random bytes, `kid` = UTC date) if missing and never overwrites it.
+- [x] On every `make up` it applies the layout and fails `make up` on any non-zero exit:
+  - [x] Git Bash: `MSYS2_ARG_CONV_EXCL='*'`; `icacls` grants the user SID (from `whoami /user`) and SYSTEM with (OI)(CI) on `secrets/`, inheritance removed, Administrators removed; `.env` gets plain `F` for the same two, inheritance and Administrators removed. The SID comes from `whoami.exe /user` via `cygpath` (Git Bash's own `whoami` cannot).
+  - [x] Linux: `secrets/` 0700; the key file `root:10001` 0440 via sudo; a clear error when sudo is missing.
+- [x] The file is mounted as a Compose file secret into `api` only (top-level `secrets:` block and the `api` `secrets:` list). No other service gets it.
+- [x] CI `stack` job: generate (`env-init.sh . generate-only`), then mask each key value separately, then apply the layout (after it, the runner reads the files only with `sudo`); fail if any generated value appears in the stack logs. `.env` and `secrets/` are never uploaded. A step proves `api` can read the file: `exec -T api test -r /run/secrets/jwt_signing_keys`.
+- [x] `docker compose config --quiet` passes in the lint job with no `secrets/` files present (confirm on the runner's Compose version).
+- [x] `docs/runbooks/secret-leak.md` (new, JWT row and the general steps from ADR-015) and `docs/runbooks/key-rotation.md` (new, JWT section: 90-day manual rotation, 15-minute wait, restore uses the leak procedure).
+- [x] Tests: `make lint`, `make test`, CI green; a CI run shows the masked values never appear; locally on Git Bash, `icacls secrets` output in the PR shows only the user and SYSTEM.
 
 ## Allowed files
 
@@ -94,6 +94,7 @@ E1-05 signs access tokens with keys that must never sit in env, logs or CI artef
       - a broken `od` stops before `.env` or the key is written;
       - Linux without sudo keeps the key at 0600 and prints the root commands;
       - `leak-check.sh` gives clean = 0, leak = 1, empty or missing patterns = 1, failing `compose logs` = 1.
+  - QA 2026-10-27 (qa-engineer, head 9a46965, own project): pass on all criteria. Key file one `YYYY-MM-DD=<64 hex>` line, names-only output, idempotent (sha256 unchanged); Windows ACL only user + SYSTEM; an extra entry on the key file is removed by `/reset`, on `.env` it stops `make up`; a folder at the key path stops with the `rmdir` hint; `make up` 9 s fresh, 3 s again; only `api` mounts the file; no key in 221 log lines; only the SeaweedFS startup line carries the S3 access key ID, the S3 secret key appears nowhere; `leak-check.sh` passes on real logs and fails, without printing values, on appended `secretKey=`, wrong service, rewording, and missing patterns; `make test` 59 passed; CI 11/11.
 - Left for later:
   - Key-age panel with an alert above 100 days (ADR-015 "We will monitor"): E2, when Grafana exists. Until then `key-rotation.md` says to note the date by hand.
   - ADR-024 is `proposed`; it needs acceptance at merge. Withdraw it if E1-25 or an S3 identities file stops the SeaweedFS startup line.
