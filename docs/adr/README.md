@@ -29,3 +29,4 @@ One file per decision: `docs/adr/NNN-short-title.md`, from `000-template.md`. Ac
 | [021](021-asgi-server-uvicorn.md) | uvicorn (no extras) as the ASGI server for the API | accepted | E0-07 |
 | [022](022-data-retention-deletion-export.md) | Data retention, deletion and export: fixed upper bounds, own purge jobs, backups expire in ≤ 30 days, deletion ledger replayed on restore | accepted | E1-03 |
 | [023](023-auth-libraries.md) | Auth libraries: PyJWT (no extras) and argon2-cffi | accepted | E1-02 |
+| [024](024-s3-access-key-id-not-secret.md) | The SeaweedFS S3 access key ID is an identifier; the CI leak check ignores only its SeaweedFS startup log line | proposed | E1-05b |
