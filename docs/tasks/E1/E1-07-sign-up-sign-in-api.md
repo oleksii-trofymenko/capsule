@@ -34,6 +34,7 @@ As a guest who liked a guide, I want to create an account with my email and a pa
   - [ ] Happy, failure and edge paths: duplicate email in different letter case, the move failing halfway, a reused guest credential, missing age confirmation.
   - [ ] Two parallel sign-ups with the same guest credential (R3).
 - [ ] Fixtures use made-up emails on a reserved domain (`example.com`) only.
+- [ ] ADR-014 hashing path: rate limits first, then an `asyncio.Semaphore` (4 slots, 1 s acquire timeout) before the hash is offloaded; a timeout returns 503 with `Retry-After` and runs no hash. Tested.
 
 ## Allowed files
 
