@@ -21,7 +21,7 @@ SeaweedFS 4.48 logs the chunk `CipherKey` in plain text at error level (`reader_
 - [ ] A test feeds the real SeaweedFS 4.48 log line through the pipeline and asserts no key leaves it.
 - [ ] The same pipeline redacts, for every container, `Authorization` header values (`Bearer …`, `AWS4-HMAC-SHA256 …`) and presigned-URL query parameters `X-Amz-Signature` and `X-Amz-Credential`. A test feeds one sample line of each through the pipeline.
 - [ ] Ship only warning level and above from seaweedfs unless a card justifies more.
-- [ ] The CI `stack` job's "Dump stack logs" step filters seaweedfs `CipherKey` values the same way (public Actions logs), until the upstream fix lands.
+- [ ] The CI `stack` job's "Dump stack logs" step filters seaweedfs `CipherKey` values the same way (public Actions logs), until the upstream fix lands. It also redacts `Authorization` values and `X-Amz-Signature` / `X-Amz-Credential` parameters from every service.
 - [ ] This card is an acceptance criterion of (or merged into) the first E2 card that ships container logs; logs must not be shipped without it.
 
 ## Allowed files

@@ -1,4 +1,4 @@
-# E1-29 · `.env` from a failed first run keeps its inherited Windows ACL
+# E1-29 · `.env` must never exist with an unverified Windows ACL
 
 | Field | Value |
 | --- | --- |
@@ -13,14 +13,13 @@
 
 ## Why
 
-If the first `make up` on Windows writes `.env` and then fails before the `icacls` step, the file keeps the folder's inherited ACL. Later runs see that `.env` exists and skip generation, so the restriction may never be applied (E1-05b re-review, N3; the gap predates E1-05b).
+`env-init.sh` moves a new `.env` into place before the Windows layout step runs. If that run then fails (for example `whoami.exe` fails or the SID check stops it), `.env` keeps the folder's inherited ACL until a later run gets past the layout step, and a run that keeps failing the same way never does (E1-05b re-review, N3). Every successful run already re-applies and checks the ACL of an existing `.env` (since E1-05b), and on Linux `.env` is born 0600 under `umask 077`.
 
 ## Acceptance criteria
 
-- [ ] On Windows, every `make up` restricts an existing `.env` to the user SID and SYSTEM (or stops with the SDDL check), not only the run that created it. Same for Linux mode `0600`.
-- [ ] Or: `.env` is written to a temp file in the same folder, restricted, then renamed into place, so a failed run leaves no `.env`. Pick one in the plan.
-- [ ] Proof: simulate a failure after `.env` is written; the next run leaves `.env` with only the user and SYSTEM entries.
-- [ ] Tests: the proof above in Git Bash on Windows; the Linux branch in a container; the CI `stack` job green.
+- [ ] On Windows, a `.env` created by a run never exists with an unverified ACL: either it is created only after the layout succeeds, or it is restricted before it is moved into place, or the run removes it on failure (as it already does for a JWT key created in a failed run). The plan picks one.
+- [ ] Proof: make the layout step fail on a run that creates `.env` (for example a broken `whoami.exe` on `PATH`); afterwards there is no `.env`, or its ACL holds only the user SID and SYSTEM. The command and result are in Numbers.
+- [ ] Tests: the proof above in Git Bash on Windows; an existing `.env` is never removed by a failed run; the CI `stack` job green.
 
 ## Allowed files
 
@@ -28,7 +27,7 @@ If the first `make up` on Windows writes `.env` and then fails before the `icacl
 
 ## Out of scope
 
-- `secrets/` (already re-checked on every run since E1-05b).
+- `secrets/` (already handled since E1-05b). A `.env` the user copied in by hand (already re-checked on every successful run).
 
 ## Analytics events
 
@@ -38,6 +37,6 @@ If the first `make up` on Windows writes `.env` and then fails before the `icacl
 
 - Plan approved:
 - Decisions:
-  - Filed 2026-10-27 from the E1-05b re-review (N3).
+  - Filed 2026-10-27 from the E1-05b re-review (N3); narrowed after the PR #30 review to the window before the layout step.
 - Numbers:
 - Left for later:

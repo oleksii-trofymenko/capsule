@@ -33,7 +33,7 @@ E0-01 first. Then E0-03, E0-04, E0-06, E0-08 and E0-09 can run in parallel. E0-0
 5. E1-09 after E1-07; E1-10 after E1-09. E1-13 after E1-07, E1-11, E1-12 and E1-20.
 6. E1-14 after E1-09, E1-12 and E1-20. It can run alongside E1-13.
 7. E1-22 (API edge hardening) after E1-05, in parallel with step 4.
-8. E1-16 (demo) last: it needs E1-08, E1-13, E1-14, E1-15 and E1-22.
+8. E1-16 (demo) last: it needs E1-08, E1-13, E1-14, E1-15, E1-22 and E1-26.
 
 E1-23 (Postgres backups) after E1-03 and E1-04. It is not needed for the demo, but it must be in place before accounts hold real data.
 
@@ -41,10 +41,12 @@ Before external beta, not part of the E1 demo:
 - E1-17 (password reset by email).
 - E1-24 (email field encryption) after E1-04 and E1-07.
 - E1-25 (host disk and SeaweedFS keys) after E1-04.
-- E1-30 (least-privilege S3 identity for `api`) after E1-25, and before any card gives `api` S3 access.
+- E1-30 (least-privilege S3 identity for `api`) after E1-25. The first card that gives `api` S3 access lists E1-30 in Depends on.
 
-Hardening follow-ups from E1-05a and E1-05b, small and independent:
-- E1-26 (separate Postgres roles) after E1-05, before E1-16.
+Hardening follow-ups from E1-05a and E1-05b:
+- E1-26 (separate Postgres roles) after E1-05, in parallel with step 4; E1-16 needs it.
 - E1-27 (migration lock timeout), E1-28 (`REDIS_URL` error leak) and E1-29 (`.env` ACL after a failed first run) at any time.
+
+E2-02 (key-age panel) belongs with the first E2 Grafana card.
 
 E8-01 and E8-02 (named tunnel, pinning, bundle scan) wait for the owner's domain purchase. E8-01 may be pulled forward before E3 streaming, because quick tunnels do not support SSE.

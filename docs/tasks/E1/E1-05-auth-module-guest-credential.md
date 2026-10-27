@@ -24,7 +24,7 @@ As a guest, I want to use Capsule straight away without creating an account, so 
 - [ ] Expired, malformed, wrong-key and revoked tokens get a 401 problem document, with no detail that helps an attacker.
 - [ ] A reusable dependency gives protected endpoints the current principal (guest or account).
 - [ ] Signing keys are read from `/run/secrets/jwt_signing_keys` (E1-05b provides the file) as ADR-015 requires; `api` refuses to start with zero or more than two keys, and the error names no value.
-- [ ] Each key is exactly 32 bytes after hex decoding (64 hex characters, the format E1-05b writes). A shorter, longer or non-hex value stops `api` with an error that names the `kid`, never the value.
+- [ ] Each key is at least 32 bytes after hex decoding (at least 64 hex characters, ADR-014; E1-05b writes exactly 64). A shorter or non-hex value stops `api` with an error that names the `kid`, never the value.
 - [ ] Logs carry no token, credential or IP at INFO level.
 - [ ] ADR-022, API half of E1-05a M1: a database error (for example `IntegrityError`) never reaches the logs with the driver's DETAIL, parameters or row values. The JSON formatter and the exception handler log only the error type, SQLSTATE and constraint name. A test triggers a unique violation and checks the log line.
 - [ ] A4 (`docs/security.md`): the server stores only token hashes, never raw tokens. The same applies to guest credentials (§6). A test reads the tables and finds no raw value.

@@ -17,9 +17,11 @@ Today `api` and `migrate` both connect as `POSTGRES_USER`, the superuser the ima
 
 ## Acceptance criteria
 
-- [ ] Three roles: the bootstrap superuser (used only by the Postgres image and by `migrate`'s first-run grant, or not at all after init), a schema-owner role for `migrate`, and a `NOSUPERUSER NOCREATEDB NOCREATEROLE` role for `api` with only `SELECT, INSERT, UPDATE, DELETE` on the app tables and `USAGE` on their sequences.
+- [ ] Two new roles: a schema-owner role for `migrate`, and a `NOSUPERUSER NOCREATEDB NOCREATEROLE` role for `api` with only `SELECT, INSERT, UPDATE, DELETE` on the app tables and `USAGE` on their sequences.
+- [ ] The roles are created by an init script in `/docker-entrypoint-initdb.d` on a fresh volume. For an existing `pg_data` volume, the runbook gives the one-time step (or `env-init`/`make up` runs it). A migration cannot create roles, so no migration does.
+- [ ] At runtime nothing connects as the bootstrap superuser: `migrate` uses the owner role, `api` the api role. A check on the stack proves it (`pg_stat_activity`).
 - [ ] Grants come from a migration (or `ALTER DEFAULT PRIVILEGES` run by the owner role), so a table added later is reachable by `api` without a manual step.
-- [ ] `env-init.sh` generates the new passwords with the same hex-length checks as the existing values. An existing `.env` without them gets them added on the next `make up`, and an existing `pg_data` volume is migrated (or the runbook gives the one-time step).
+- [ ] `env-init.sh` generates the new passwords with the same hex-length checks as the existing values. An existing `.env` without them gets them added on the next `make up`.
 - [ ] `api` cannot `CREATE TABLE`, `DROP TABLE`, `TRUNCATE` or `COPY ... PROGRAM`. A test on the stack proves each one is refused.
 - [ ] The CI leak check covers the new passwords (they join the patterns like every `.env` value).
 - [ ] Decide, and record in Decisions, whether role names in Postgres auth-failure log lines need hiding (`terse` keeps them; E1-05a left for later). Role names are not secrets; a change needs a reason.
@@ -30,7 +32,8 @@ Today `api` and `migrate` both connect as `POSTGRES_USER`, the superuser the ima
 
 - `infra/compose/**`, `.env.example`, `.github/workflows/ci.yml` (`stack` job)
 - `apps/api/migrations/**`, `apps/api/tests/**`, `apps/api/core/config.py` (only if the api URL variable changes)
-- `docs/runbooks/compose-stack.md`
+- `docs/runbooks/compose-stack.md`, `docs/security.md` (asset rows for the Postgres credentials only)
+- `Makefile`, only if the throwaway test Postgres for `make test` needs the roles
 
 ## Out of scope
 
