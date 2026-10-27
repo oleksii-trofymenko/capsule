@@ -34,6 +34,7 @@ Access tokens live 10 minutes, so the app needs to renew them without asking the
 
 - `contracts/openapi.yaml`
 - `apps/api/modules/auth/**`, `apps/api/core/**`, `apps/api/main.py`
+- `apps/api/migrations/**` (one additive migration, only if a column E1-05 promised turns out wrong)
 - `apps/api/tests/**`
 
 ## Out of scope

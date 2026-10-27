@@ -18,9 +18,9 @@ As a guest, I want to use Capsule straight away without creating an account, so 
 ## Acceptance criteria
 
 - [ ] Contract first: `POST /v1/auth/guest` in `contracts/openapi.yaml` (201 with a new credential and the first token pair, 200 for an existing credential), plus the shared `bearerAuth` scheme and 401 response. Every error is RFC 9457. Token responses carry `Cache-Control: no-store`.
-- [ ] `modules/auth` with a service interface. One migration (on the E1-05a baseline) adds principals (guest or account) with `last_activity_at` on every principal (ADR-022; used by E1-10), guest credentials (no `revoked_at`: ADR-014 never revokes a credential), refresh families and refresh tokens with the ADR-014 states. The guest response already issues the first family and token.
+- [ ] `modules/auth` with a service interface. One migration (on the E1-05a baseline) adds principals (guest or account) with `last_activity_at` on every principal (ADR-022; used by E1-10), guest credentials (no `revoked_at`: ADR-014 never revokes a credential), refresh families (with created and last-refresh times and `revoked_at`) and refresh tokens (hash, state `current`/`rotated`/`superseded`, first rotation time, grace-used time and successor link), so E1-05c needs no schema change. The guest response already issues the first family and token.
 - [ ] Issuing a guest credential stores no personal data: no IP, device id, email or analytics id.
-- [ ] A guest credential older than the guest retention (ADR-022, 30 days since last activity; a constant, not a setting) gets 401.
+- [ ] A guest credential whose principal's `last_activity_at` is older than the configured guest retention gets the same 401 as an unknown credential (ADR-014); a test compares the two responses. The retention is one setting in `core/config.py`, at most 30 days, default 30 (ADR-022); E1-10 reuses it.
 - [ ] Expired, malformed, wrong-key and revoked access tokens get a 401 problem document with `WWW-Authenticate: Bearer`, with no detail that helps an attacker.
 - [ ] A reusable dependency gives protected endpoints the current principal (guest or account). `kind` comes from the principal row, never from the token claim; a deleted principal gets 401.
 - [ ] `last_activity_at` is touched only after a 2xx response (ADR-022: failed and unauthenticated requests do not count), at most hourly, in its own statement. A failed touch is logged without parameters and never turns a 2xx into an error. Guest sign-in with an existing credential counts.
@@ -41,6 +41,7 @@ As a guest, I want to use Capsule straight away without creating an account, so 
 - `contracts/openapi.yaml`
 - `apps/api/modules/auth/**`, `apps/api/core/**`, `apps/api/migrations/**`, `apps/api/main.py`, `apps/api/pyproject.toml`, `apps/api/uv.lock`
 - `apps/api/tests/**`
+- `.env.example` and `infra/compose/test.env` (the guest retention variable only)
 
 ## Out of scope
 
@@ -59,9 +60,9 @@ As a guest, I want to use Capsule straight away without creating an account, so 
   - Filed 2026-10-27 from the approved E1 plan.
   - 2026-10-27: amended from E1-01 threat model (docs/security.md).
   - 2026-10-27 (backend-engineer plan ~1,450 lines): split three ways. E1-05d (keys, database-error logs, R4 test) first, then this card (guest, tables, principal), then E1-05c (refresh and logout).
-  - 2026-10-27 (security-engineer): no `revoked_at` on guest credentials; `last_activity_at` only after a 2xx (the plan's pre-handler touch would break ADR-022). `POST /v1/auth/guest` takes no idempotency key (A4, decision above). Retention and key path are constants.
+  - 2026-10-27 (security-engineer): no `revoked_at` on guest credentials; `last_activity_at` only after a 2xx (the plan's pre-handler touch would break ADR-022). `POST /v1/auth/guest` takes no idempotency key (A4, decision above). The key path is a constant (ADR-015); the retention is a setting (ADR-014, ADR-022: "configured retention").
   - 2026-10-27: added the 32-byte key check (E1-05b review) and the API half of the database-error sanitising (E1-05a review, M1).
   - 2026-10-27: split into E1-05a (Alembic, migration runner, Postgres logging) and E1-05b (key plumbing); this card keeps the auth core. `last_activity_at` lives on `principals`. `POST /v1/auth/guest` is exempt from the idempotency-key rule: replaying a stored response would store the raw credential (A4); a lost response leaves an empty guest the purge removes.
 - Numbers:
 - Left for later:
-  - ADR-005 Ruff banned-import rules for `modules.auth` internals need the root `pyproject.toml`; file a card.
+  - ADR-005 Ruff banned-import rules for module internals: E1-31.

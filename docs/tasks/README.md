@@ -46,6 +46,7 @@ Before external beta, not part of the E1 demo:
 Hardening follow-ups from E1-05a and E1-05b:
 - E1-26 (separate Postgres roles) after E1-05, in parallel with step 4; E1-16 needs it.
 - E1-27 (migration lock timeout), E1-28 (`REDIS_URL` error leak) and E1-29 (`.env` ACL after a failed first run) at any time.
+- E1-31 (module-boundary lint) after E1-05.
 
 E2-02 (key-age panel) belongs with the first E2 Grafana card.
 
