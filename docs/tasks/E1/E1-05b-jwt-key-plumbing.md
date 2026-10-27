@@ -52,6 +52,16 @@ E1-05 signs access tokens with keys that must never sit in env, logs or CI artef
   - 2026-10-27 (build): the consumer GID is one constant in `env-init.sh` (`API_GID=10001`, from `apps/api/Dockerfile`).
   - 2026-10-27 (build): container paths in Git Bash need `MSYS_NO_PATHCONV=1` (`/run/secrets/...` is otherwise rewritten to `C:/Program Files/Git/run/...`). Found during local verification; the runbook check carries it.
   - 2026-10-27 (build): local `make up` timings used an isolated project (`capsule-e105b`, port 18005), because E1-05a shared the same Docker Desktop on project `capsule`. The owner's own checkout gets its `secrets/` on the first `make up` after merge.
+  - 2026-10-27 (review, code-reviewer and security-engineer approved; fixes in `480acb0`, `bf87852`, `6a8fdea`):
+    - M1: each file in `secrets/` is `icacls /reset` to inherited entries. Then the DACLs of `secrets/`, every file in it and `.env` are read back as SDDL (`icacls /save`), which carries SIDs and fixed aliases (`SY`), never localised names. Any other trustee stops `make up`.
+    - M2: the folder is restricted before the key is written. On Windows, a key created in a run whose layout then fails is removed. On Linux it is kept: it is born 0600 under umask 077, and removing it would break the printed root `chown`/`chmod` hint. That is a deliberate deviation from "delete on failure" for Linux.
+    - L2: every random value (`.env` and the key) is checked for its exact hex length before it is written. The check uses a glob, not `=~`, so the caller's `BASH_REMATCH` survives.
+    - M3, L1 and the self-test: every `.env` value joins the leak patterns. One `$RUNNER_TEMP/leak-check.sh` (written in the mask step, run twice) fails on a missing or empty pattern file, runs a control line that must match, and fails on grep exit 2. An empty `secrets/` gets its own error. The folder-at-path message names `sudo rmdir`. Runbooks: the reset is narrowed to the JWT file with the E1-24 off-host warning; the `icacls /reset /T` advice is qualified; the `S-1-5-21-` only scope is noted (Entra ID `S-1-12-1-` needs a change); the leak runbook states that replacing the whole file also drops the previous key.
+    - L3 skipped, as instructed.
+  - 2026-10-27 (review, **open, needs a decision**): with M3 in place, CI `stack` fails (run 40539320041). The cause is not a code leak. SeaweedFS 4.48 logs the S3 access key ID at startup (INFO, `auth_credentials.go:582`: `Added admin identity from AWS environment variables: name=admin-<first 8 hex of the key>, accessKey=<SEAWEEDFS_S3_ACCESS_KEY>`). This was reproduced locally. No other `.env` value and no `secrets/` value appears in any log, and the S3 secret key does not appear. The same line is in the home server's seaweedfs logs today (local driver, on the host). The check was left strict, as instructed. Options:
+    - (a) Treat the S3 access key ID as an identifier, not secret material (AWS convention: it cannot sign without the secret key). Keep it masked but leave it out of the leak patterns, with a comment. This needs a security-engineer decision, and an ADR-015 note because ADR-015 says "each `.env` value".
+    - (b) Keep the check strict and move the S3 identity from environment variables to an identities config file (ADR-015 option 5, deferred). Whether that path logs the key is not tested.
+    - (c) There is no SeaweedFS flag that silences this one INFO line without hiding other logs.
 - Numbers:
   - `make up` from a fresh `.env` (images and build cache warm, Git Bash, Docker Desktop 29.8.2): before 7 s (main `1799a6d`), after 7 s. A second run with existing files: 2 s, key file and `.env` unchanged (sha256).
   - CI `stack` job: before 69 s (run 40534412700, main), after 73 s (run 40536049099, PR #28). Whole run 1 m 31 s → 1 m 32 s. All checks green, `ci-ok` pass.
@@ -59,6 +69,16 @@ E1-05 signs access tokens with keys that must never sit in env, logs or CI artef
   - Lint job `compose config --quiet` with no `secrets/`: pass on ubuntu-24.04 image 20261012.334.1, Docker Compose 2.38.2 (and locally on Compose v5.5.1).
   - Local Git Bash: `icacls` on `secrets/`, the key file and `.env` shows only SYSTEM and the user; a uid 10001 `--read-only` container reads the file; in the stack only `api` has `/run/secrets/jwt_signing_keys`; the Linux branch was checked in a container (root, non-root without sudo, already correct).
   - "Secrets in repository" stays 0 (`make lint`, gitleaks history).
+  - After the review fixes:
+    - `make up` with existing `.env` and `secrets/`, new volumes: 8 s, including `/reset` and the SDDL check.
+    - `make lint` passes; `make test` 59 passed.
+    - CI run 40539320041: every job except `stack` passes. `stack` fails at 40 s on the leak check (above), so `ci-ok` fails.
+    - Local proofs (temp copies):
+      - an explicit Users entry on the key file is dropped by `/reset`;
+      - an explicit Users entry on `.env` stops the run with `.env also grants access to 'BU'`, and the new key is removed;
+      - a broken `od` stops before `.env` or the key is written;
+      - Linux without sudo keeps the key at 0600 and prints the root commands;
+      - `leak-check.sh` gives clean = 0, leak = 1, empty or missing patterns = 1, failing `compose logs` = 1.
 - Left for later:
   - Key-age panel with an alert above 100 days (ADR-015 "We will monitor"): E2, when Grafana exists. Until then `key-rotation.md` says to note the date by hand.
-  - ADR-015 asks CI to grep every masked value, including the `.env` values. This card greps only the `secrets/` values (its scope). Extend the pattern file when E1-08 moves the SeaweedFS keys to `secrets/`, or with a small card.
+  - The S3 access-key log line decision (above) blocks green CI on this PR.
