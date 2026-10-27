@@ -17,14 +17,15 @@ ADR-005 and `apps/api/CLAUDE.md` say module boundaries are enforced by Ruff bann
 
 ## Acceptance criteria
 
-- [ ] Ruff bans importing `modules.<name>.<anything>` from outside `modules/<name>/`; other code imports only `modules.<name>` (its `__init__` interface). Tests of a module may import its internals.
+- [ ] Each module's internal submodules (for `modules.auth`: repository, tokens, service, router, schemas, dependencies) are listed in Ruff `banned-api`, with `per-file-ignores` for the module itself and its tests. Other code imports only `modules.<name>` (its `__init__` interface). No new dependency.
+- [ ] `apps/api/CLAUDE.md` says a new module adds its `banned-api` and `per-file-ignores` entries.
 - [ ] `migrations` is added to `known-first-party` (E1-05a left for later).
 - [ ] Proof: a scratch file that imports `modules.auth.repository` from `core/` fails `make lint`; the result is in Numbers and the file is not committed.
 - [ ] Tests: `make lint` and `make test` green on the current code.
 
 ## Allowed files
 
-- `pyproject.toml` (Ruff settings only), and `apps/api/**` import lines only if current code breaks the new rule
+- `pyproject.toml` (Ruff settings only), `apps/api/CLAUDE.md` (the module-boundary line only), and `apps/api/**` import lines only if current code breaks the new rule
 
 ## Out of scope
 
