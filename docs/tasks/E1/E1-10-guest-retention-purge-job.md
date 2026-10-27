@@ -18,7 +18,7 @@ As a guest who stopped using Capsule, I want my data removed from the server aft
 ## Acceptance criteria
 
 - [ ] A scheduled SAQ job deletes every guest whose `last_activity_at` is older than the configured retention (upper bound 30 days, retention ADR), using the E1-09 delete handlers.
-- [ ] The job runs at least once every 24 h. Each run also deletes refresh families that expired or were revoked more than 24 h ago, and deletion-ledger rows older than 31 days (ADR-022).
+- [ ] The job runs at least once every 24 h. Each run also deletes refresh families that expired or were revoked more than 24 h ago. It never prunes the deletion ledger: E1-23 does, and only up to the oldest backup on disk (ADR-022).
 - [ ] Job rules (apps/api CLAUDE.md): a timeout, bounded retries with backoff, a deterministic job key, and safe to run twice. It works in batches so one run never locks the tables for long.
 - [ ] Each run exposes a count of guests deleted and of expired guests left over. Left over must be 0 after a successful run; this is what the SLO measures. Until E2 adds metrics export, the counts go into a structured log line.
 - [ ] A `worker` service is added to Compose (the same image as `api`, hardened like the other services: non-root, dropped capabilities, `check-privileges.sh` passes). `make up` stays healthy.

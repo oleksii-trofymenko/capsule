@@ -21,8 +21,15 @@ As a guest who liked a guide, I want to create an account with my email and a pa
 - [ ] Sign-up takes an email, a password (rules from ADR-014) and `age_confirmed: true`. Without the age confirmation it returns 422. The server stores only the confirmation time, never a birth date.
 - [ ] Emails are normalised before the uniqueness check. Passwords are hashed as ADR-014 requires and never logged or returned.
 - [ ] A7 (`docs/security.md`): sign-up with an email that is already registered returns a conflict problem document that offers sign-in (flows.md 3a), with no other account detail. The owner's sign-off on this enumeration trade-off is pending and must be recorded in Decisions before merge.
+- [ ] M6 (ADR-022): sign-up looks up the normalised email before inserting, and the A7 conflict comes from that check. The unique constraint stays as a backstop. A unique violation maps to the same conflict problem document, and its database text (which contains the email) is never logged or returned.
 - [ ] Wrong email or password returns the same problem document, with similar timing.
-- [ ] Moving guest data: when a valid guest credential comes with the request, all guest-owned rows move to the account in one transaction and the guest credential is revoked. If any step fails, nothing moves and the guest credential still works. A guest credential that is revoked or belongs to someone else moves nothing. Nothing is ever matched by email, device or analytics id.
+- [ ] Moving guest data: when a valid guest credential comes with the request, all guest-owned rows move to the account in one transaction. The same transaction deletes the guest principal and its credential and writes the guest principal id to the deletion ledger (ADR-022). If any step fails, nothing moves and the guest credential still works. A guest credential that is unknown, deleted or belongs to someone else moves nothing. Nothing is ever matched by email, device or analytics id.
+- [ ] Deletion ledger (ADR-022), introduced here because the move is the first deletion:
+  - a table holding only the principal id and the deletion time;
+  - one writer that inserts the row in the caller's transaction and, after commit, appends the id to the ledger file at the path from config.
+  - A missing or unwritable ledger directory never fails the request or stops `api` from starting. The writer logs an error with the principal id only, and the table stays the record.
+  - E1-09 reuses the writer.
+  - Tests: ledger row written by the move, append failure, missing directory at start-up.
 - [ ] The response reports how many guest guides moved, which the app needs for `guest_guides_moved`. It is 0 until E3 adds guides.
 - [ ] Logout revokes the account's refresh family on this device.
 - [ ] R3: the guest-data move locks the guest credential row. With two parallel sign-ups or sign-ins using the same credential, one moves the data and the other moves nothing.

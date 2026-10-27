@@ -31,7 +31,7 @@ GDPR storage limitation needs a written retention period for every kind of data 
 
 ## Allowed files
 
-- `docs/adr/0xx-data-retention.md`, `docs/adr/README.md`, `docs/metrics.md` (data-deletion row only), `docs/security.md` (data-policy section only)
+- `docs/adr/022-data-retention-deletion-export.md`, `docs/adr/README.md` (022 row only), `docs/metrics.md` (data-deletion row only), `docs/security.md` (§6 Retention and the A8 row only), and the acceptance-criteria and Allowed-files lines named by ADR-022 in `docs/tasks/E1/E1-05-auth-module-guest-credential.md`, `docs/tasks/E1/E1-07-sign-up-sign-in-api.md`, `docs/tasks/E1/E1-08-rate-limiting.md`, `docs/tasks/E1/E1-09-delete-and-export-api.md`, `docs/tasks/E1/E1-10-guest-retention-purge-job.md`, `docs/tasks/E1/E1-15-cloudflare-quick-tunnel.md`, `docs/tasks/E1/E1-23-postgres-backups.md`
 
 ## Out of scope
 

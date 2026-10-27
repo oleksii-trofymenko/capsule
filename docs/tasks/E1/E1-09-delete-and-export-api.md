@@ -19,7 +19,11 @@ As a guest or account holder, I want to delete everything Capsule holds about me
 
 - [ ] Contract first: delete and export operations for the current principal (e.g. `DELETE /v1/me`, `GET /v1/me/export`). Both work for guests and accounts.
 - [ ] Delete removes every row owned by the principal and revokes all its tokens and credentials before it responds (the app wipes local data only after success, flows.md F10). Calling it again for a deleted principal returns 401, never 500.
-- [ ] In the same transaction, delete writes a deletion-ledger row (principal id and deletion time only, ADR-022). After commit and before responding, it appends the id to the ledger file at the path from config (E1-23 provides the mount). A failed append keeps the deletion, returns success and logs an error with no personal data. Tests cover the ledger row and the failed append.
+- [ ] In the same transaction, delete writes the principal id to the deletion ledger through the E1-07 writer, and collects the principal's media object keys before the commit (ADR-022).
+  - After commit and before responding, the writer appends the id to the external ledger file, and the media hook deletes the collected keys.
+  - A failed append or a missing ledger disk keeps the deletion, returns success and logs an error with the principal id only.
+  - A failed media delete is left to the ADR-008 job.
+  - Tests: the ledger row, a failed append, and keys collected before commit.
 - [ ] Every module that stores user data registers its delete and export handlers with the auth service, so E3+ tables join without changing this card's code. A test fails if a table holding user data has no handler (the check covers the tables that exist now).
 - [ ] Export returns the format set by the retention ADR. It includes the account email for accounts and never includes password hashes or tokens.
 - [ ] Media deletion follows ADR-008 when media exist (none in E1). The test proves the hook is called.
