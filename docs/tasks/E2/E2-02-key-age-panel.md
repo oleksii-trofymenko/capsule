@@ -7,7 +7,7 @@
 | Reviewers | code-reviewer, security-engineer |
 | Estimate | S |
 | Metric | n/a — operations control for ADR-015 key rotation; no product metric or SLO moves |
-| Depends on | the first E2 card that brings up Grafana |
+| Depends on | E1-05; the first E2 Grafana card (ID to add once it is filed) |
 | ADRs | 015 |
 | Design spec | none |
 
@@ -17,7 +17,8 @@ ADR-015 ("We will monitor") rotates the JWT signing keys by hand every 90 days. 
 
 ## Acceptance criteria
 
-- [ ] A Grafana panel shows the age in days of the newest JWT signing key, read from the `YYYY-MM-DD` `kid` of each line in `secrets/jwt_signing_keys`. Only the `kid` dates leave the file; no key value is read into any metric, log or label.
+- [ ] `api`, which already reads `/run/secrets/jwt_signing_keys` at start (ADR-015: no other service gets the file), exposes the age in days of the newest key as a metric, computed from the `YYYY-MM-DD` `kid`. No key value goes into any metric, log or label.
+- [ ] A Grafana panel shows that metric.
 - [ ] An alert fires when the newest key is older than 100 days.
 - [ ] Proof: a test file with an old `kid` makes the alert fire; the metric output holds no hex longer than the date.
 - [ ] Tests: the proof above; the CI `stack` job green.
@@ -25,7 +26,7 @@ ADR-015 ("We will monitor") rotates the JWT signing keys by hand every 90 days. 
 
 ## Allowed files
 
-- `infra/**` (exporter or script, dashboard, alert rule), `docs/runbooks/key-rotation.md`
+- `apps/api/core/**` (key-age metric), `apps/api/tests/**`, `infra/**` (dashboard, alert rule), `docs/runbooks/key-rotation.md`
 
 ## Out of scope
 
