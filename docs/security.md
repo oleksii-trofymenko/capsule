@@ -129,7 +129,7 @@ STRIDE: S spoofing, T tampering, R repudiation, I information disclosure, D deni
 | # | Threat | STRIDE | Mitigation | Owner |
 | --- | --- | --- | --- | --- |
 | H1 | Secrets committed, logged or left in CI artefacts | I | gitleaks on changes and history (`make lint`). Where secrets live and how they rotate is decided in ADR-015. Nothing secret in Compose output | E0-04, E1-04 |
-| H2 | JWT signing key leaks | S/E | Storage, rotation and key id per ADR-015. Rotating the key logs every user out | E1-04, E1-05 |
+| H2 | JWT signing key leaks | S/E | Storage, rotation and key id per ADR-015. Rotating the key does not log users out: refresh tokens are opaque and not signed, so only access tokens (10 min) fail and the app refreshes them (ADR-014) | E1-04, E1-05 |
 | H3 | Backups leak or outlive deletion | I | Backups encrypted, kept at most 30 days, never include media | E1-23 backup card |
 | H4 | Personal data in container logs | I | No email, password, token, credential or IP at INFO (section 6) | E1-05, E1-07, E1-09 |
 | H5 | Compromised dependency or image | T/E | Pins by digest or lockfile, 7-day rule, pip-audit and npm audit (ADR-018, ADR-019) | All cards |
