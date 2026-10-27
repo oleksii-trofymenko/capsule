@@ -7,7 +7,7 @@
 | Reviewers | code-reviewer, security-engineer |
 | Estimate | S |
 | Metric | n/a — test tooling; catches 500s and contract drift on endpoints that take user input |
-| Depends on | the first endpoint that accepts user input (likely sign-up/sign-in in E1) |
+| Depends on | E1-05 (token refresh is the first endpoint that accepts user input) |
 | ADRs | 020 (revisits its "Schemathesis lost" option), new ADR for Schemathesis |
 | Design spec | none |
 

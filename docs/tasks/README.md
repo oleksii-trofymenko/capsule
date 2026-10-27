@@ -23,3 +23,15 @@
 ## E0 order
 
 E0-01 first. Then E0-03, E0-04, E0-06, E0-08 and E0-09 can run in parallel. E0-05 after E0-04; E0-07 after E0-06. E0-10 (align docs with the accepted ADRs) before E0-06. E0-11 (agent and skill rules vs ADR-010) before the E3 gateway card.
+
+## E1 order
+
+1. E1-01 (threat model) first. E1-18 (Expo scaffold) does not depend on it and can start at the same time.
+2. In parallel: the decision cards E1-02 (ADR-014), E1-03 (retention ADR), E1-04 (ADR-015), plus E1-19 (UI primitives ADR) after E1-18. The owner must accept these ADRs before code that depends on them starts.
+3. After E1-02 and E1-03: E1-11 (A2/S1 design) and E1-21 (Privacy notice). After E1-02 and E1-04: E1-05 (guest credential) and E1-15 (quick tunnel), in parallel.
+4. After E1-05: E1-06, E1-07, E1-08 and E1-12 in parallel. E1-20 (base components) after E1-19 and E1-11.
+5. E1-09 after E1-07; E1-10 after E1-09. E1-13 after E1-07, E1-11, E1-12 and E1-20.
+6. E1-14 after E1-09, E1-12 and E1-20. It can run alongside E1-13.
+7. E1-16 (demo) last: it needs E1-08, E1-13, E1-14 and E1-15.
+
+E1-17 (password reset by email) is backlog, due before external beta. It is not part of the E1 demo.
