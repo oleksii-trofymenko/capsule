@@ -7,7 +7,7 @@
 | Reviewers | code-reviewer, security-engineer |
 | Estimate | M |
 | Metric | Availability (home server): 99% (external uptime monitor; this card makes the API reachable from outside so it can be measured) |
-| Depends on | E1-02, E1-04, E1-08 (no public URL before guest creation is rate limited) |
+| Depends on | E1-02, E1-04, E1-08 (no public URL before guest creation, sign-up and sign-in are rate limited) |
 | ADRs | 014, 015 |
 | Design spec | none |
 

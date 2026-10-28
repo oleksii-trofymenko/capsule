@@ -49,6 +49,7 @@ Hardening follow-ups from E1-05a and E1-05b:
 - E1-31 (module-boundary lint) after E1-05.
 - E1-32 (env-init Windows edge cases) after E1-29.
 - E1-33 (stateful Schemathesis run with OpenAPI `links`) after E1-06, any time.
+- E1-34 (database outage answers 503) after E1-07, any time; before E1-16.
 
 E2-02 (key-age panel) belongs with the first E2 Grafana card.
 
