@@ -28,9 +28,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.engine = create_engine(settings)
         app.state.sessionmaker = create_sessionmaker(app.state.engine)
         app.state.redis = create_redis(settings)
+        hash_executor = auth.create_hash_executor()
+        app.state.password_hashing = auth.PasswordHashing(hash_executor)
         try:
             yield
         finally:
+            # Queued hashes are dropped; a running one finishes in its thread, unawaited.
+            hash_executor.shutdown(wait=False, cancel_futures=True)
             # Probes that overran /v1/ready may still be closing their connections. A psycopg
             # cleanup that outlasts this bounded wait can log "Task was destroyed but it is
             # pending" when the loop closes; that is bounded and acceptable at shutdown.
