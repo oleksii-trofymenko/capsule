@@ -9,20 +9,22 @@ from collections.abc import AsyncIterator, Callable
 
 import pytest
 from argon2 import PasswordHasher, Type, extract_parameters
+from fastapi import Request
 
 from main import create_app
 from modules.auth import hashing
 from modules.auth.hashing import (
     DUMMY_HASH,
-    HASHER,
     HasherBusyError,
     PasswordHashing,
     create_hash_executor,
 )
-from tests.support import dummy_settings
+from tests.support import client_for, dummy_settings
 
 pytestmark = pytest.mark.anyio
 
+# The real, private hasher: tests read its parameters and call it directly, outside the slots.
+REAL = hashing._HASHER
 PASSWORD = "correct horse battery"  # noqa: S105 - a made-up test password
 
 
@@ -38,15 +40,15 @@ def _b64(part: str) -> bytes:
 
 
 def test_parameters_are_the_adr_014_ones() -> None:
-    params = HASHER._parameters
+    params = REAL._parameters
     assert params.type is Type.ID
     assert (params.memory_cost, params.time_cost, params.parallelism) == (65536, 3, 1)
     assert (params.salt_len, params.hash_len) == (16, 32)
 
 
 def test_dummy_hash_has_the_same_parameters_and_needs_no_rehash() -> None:
-    assert extract_parameters(DUMMY_HASH) == HASHER._parameters
-    assert not HASHER.check_needs_rehash(DUMMY_HASH)
+    assert extract_parameters(DUMMY_HASH) == REAL._parameters
+    assert not REAL.check_needs_rehash(DUMMY_HASH)
 
 
 async def test_hash_uses_the_parameters_and_verifies(hasher: PasswordHashing) -> None:
@@ -68,9 +70,9 @@ async def test_unknown_email_runs_the_dummy_hash_and_never_matches(
     class Spy:
         def verify(self, stored: str, password: str) -> bool:
             seen.append(stored)
-            return HASHER.verify(stored, password)
+            return REAL.verify(stored, password)
 
-    monkeypatch.setattr(hashing, "HASHER", Spy())
+    monkeypatch.setattr(hashing, "_HASHER", Spy())
 
     assert await hasher.verify(None, PASSWORD) == hashing.Verified(ok=False)
     assert seen == [DUMMY_HASH]  # the same path and cost as a wrong password (A6)
@@ -82,8 +84,8 @@ async def test_old_parameters_are_rehashed_in_the_same_call(hasher: PasswordHash
 
     assert result.ok
     assert result.rehashed is not None
-    assert not HASHER.check_needs_rehash(result.rehashed)
-    assert HASHER.verify(result.rehashed, PASSWORD)
+    assert not REAL.check_needs_rehash(result.rehashed)
+    assert REAL.verify(result.rehashed, PASSWORD)
 
 
 async def test_a_corrupt_stored_hash_fails_and_logs_no_value(
@@ -99,7 +101,7 @@ async def test_a_corrupt_stored_hash_fails_and_logs_no_value(
 
 
 class _BlockingHasher:
-    """Stands in for HASHER.hash: each call blocks its thread until `release` is set."""
+    """Stands in for the hasher's `hash`: each call blocks its thread until `release` is set."""
 
     def __init__(self) -> None:
         self.release = threading.Event()
@@ -136,7 +138,7 @@ async def test_a_fifth_caller_times_out_after_1_s_and_runs_no_hash(
     hasher: PasswordHashing, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
     fake = _BlockingHasher()
-    monkeypatch.setattr(hashing, "HASHER", fake)
+    monkeypatch.setattr(hashing, "_HASHER", fake)
     tasks = await _fill_slots(hasher, fake)
 
     started = time.monotonic()
@@ -160,7 +162,7 @@ async def test_a_cancelled_caller_keeps_its_slot_until_the_hash_ends(
 ) -> None:
     monkeypatch.setattr(hashing, "ACQUIRE_TIMEOUT_S", 0.2)
     fake = _BlockingHasher()
-    monkeypatch.setattr(hashing, "HASHER", fake)
+    monkeypatch.setattr(hashing, "_HASHER", fake)
     tasks = await _fill_slots(hasher, fake)
 
     tasks[0].cancel()
@@ -178,11 +180,96 @@ async def test_a_cancelled_caller_keeps_its_slot_until_the_hash_ends(
     assert fake.most_running == hashing.SLOTS
 
 
-async def test_the_lifespan_creates_the_hasher_and_stops_its_threads() -> None:
+async def test_a_raising_hash_gives_its_slot_back(
+    hasher: PasswordHashing, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(hashing, "ACQUIRE_TIMEOUT_S", 0.2)
+
+    class Broken:
+        def hash(self, _: str) -> str:
+            raise MemoryError  # what argon2 raises when it cannot allocate
+
+    monkeypatch.setattr(hashing, "_HASHER", Broken())
+    for _ in range(hashing.SLOTS + 1):
+        with pytest.raises(MemoryError):
+            await hasher.hash(PASSWORD)
+
+    fake = _BlockingHasher()
+    monkeypatch.setattr(hashing, "_HASHER", fake)
+    tasks = await _fill_slots(hasher, fake)  # all four slots are free again
+    fake.release.set()
+    assert await asyncio.gather(*tasks) == ["hashed"] * hashing.SLOTS
+
+
+async def test_a_caller_cancelled_while_waiting_leaks_no_slot(
+    hasher: PasswordHashing, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(hashing, "ACQUIRE_TIMEOUT_S", 0.5)
+    fake = _BlockingHasher()
+    monkeypatch.setattr(hashing, "_HASHER", fake)
+    tasks = await _fill_slots(hasher, fake)
+
+    waiting = asyncio.create_task(hasher.hash(PASSWORD))
+    await asyncio.sleep(0.05)  # it is now queued on the semaphore
+    waiting.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await waiting
+    assert fake.started == hashing.SLOTS  # it never hashed
+
+    fake.release.set()
+    await asyncio.gather(*tasks)
+    await _until(lambda: fake.running == 0)
+
+    # Exactly four slots: none lost, and none gained by the cancellation.
+    again = _BlockingHasher()
+    monkeypatch.setattr(hashing, "_HASHER", again)
+    refill = await _fill_slots(hasher, again)
+    with pytest.raises(HasherBusyError):
+        await hasher.hash(PASSWORD)
+    again.release.set()
+    await asyncio.gather(*refill)
+
+
+async def test_a_busy_hasher_is_a_503_problem_with_retry_after(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(hashing, "ACQUIRE_TIMEOUT_S", 0.2)
+    fake = _BlockingHasher()
+    monkeypatch.setattr(hashing, "_HASHER", fake)
+    app = create_app(dummy_settings())
+
+    @app.post("/probe")
+    async def probe(request: Request) -> dict[str, str]:  # stands in for E1-07's sign-up
+        hasher: PasswordHashing = request.app.state.password_hashing
+        return {"hash": await hasher.hash(PASSWORD)}
+
+    async with client_for(app, lifespan=True) as client:
+        tasks = await _fill_slots(app.state.password_hashing, fake)
+        response = await client.post("/probe", headers={"X-Request-ID": "rid-busy"})
+        hashes_when_refused = fake.started
+        fake.release.set()
+        await asyncio.gather(*tasks)
+        accepted = await client.post("/probe")
+
+    assert response.status_code == 503
+    assert response.headers["content-type"] == "application/problem+json"
+    assert response.headers["retry-after"] == str(hashing.RETRY_AFTER_S) == "1"
+    assert response.json() == {
+        "type": "about:blank",
+        "title": "Service Unavailable",
+        "status": 503,
+        "request_id": "rid-busy",
+    }
+    assert hashes_when_refused == hashing.SLOTS  # the refused request ran no hash
+    assert accepted.status_code == 200
+
+
+async def test_the_lifespan_creates_the_hasher_and_shuts_its_executor_down() -> None:
     app = create_app(dummy_settings())
     async with app.router.lifespan_context(app):
         hasher = app.state.password_hashing
         assert isinstance(hasher, PasswordHashing)
+        assert await hasher.verify(None, PASSWORD) == hashing.Verified(ok=False)
 
     with pytest.raises(RuntimeError):  # the executor is shut down: no hash after shutdown
         await hasher.hash(PASSWORD)

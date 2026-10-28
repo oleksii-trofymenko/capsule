@@ -35,6 +35,14 @@ class ValidationProblem(Problem):
     errors: list[FieldError]
 
 
+class ServiceBusyError(Exception):
+    """A bounded resource is full and nothing ran: 503 with `Retry-After`. Modules subclass it."""
+
+    def __init__(self, retry_after_s: int) -> None:
+        super().__init__()
+        self.retry_after_s = retry_after_s
+
+
 def problem_response(problem: Problem, headers: Mapping[str, str] | None = None) -> JSONResponse:
     if problem.request_id is None:
         problem = problem.model_copy(update={"request_id": request_id_var.get()})
@@ -80,6 +88,16 @@ async def _validation_error(_: Request, exc: Exception) -> JSONResponse:
     )
 
 
+async def _service_busy(_: Request, exc: Exception) -> JSONResponse:
+    if not isinstance(exc, ServiceBusyError):
+        raise exc
+    return problem_response(
+        Problem(title=title_for(503), status=503),
+        headers={"Retry-After": str(exc.retry_after_s)},
+    )
+
+
 def install_problem_handlers(app: FastAPI) -> None:
     app.add_exception_handler(StarletteHTTPException, _http_exception)
+    app.add_exception_handler(ServiceBusyError, _service_busy)
     app.add_exception_handler(RequestValidationError, _validation_error)

@@ -15,12 +15,15 @@ from dataclasses import dataclass
 from argon2 import PasswordHasher, Type
 from argon2.exceptions import InvalidHashError, VerificationError
 
+from core.errors import ServiceBusyError
+
 SLOTS = 4  # at most 4 hashes at once: about 256 MiB peak (4 x 64 MiB)
 ACQUIRE_TIMEOUT_S = 1.0
 RETRY_AFTER_S = 1
 
-# ADR-014: m = 64 MiB, t = 3, p = 1, 16-byte salt, 32-byte hash.
-HASHER = PasswordHasher(
+# ADR-014: m = 64 MiB, t = 3, p = 1, 16-byte salt, 32-byte hash. Private: every hash goes
+# through PasswordHashing, so nothing runs around its slots.
+_HASHER = PasswordHasher(
     time_cost=3, memory_cost=65536, parallelism=1, hash_len=32, salt_len=16, type=Type.ID
 )
 # A hash of a random, discarded password with the parameters above. Unknown emails are verified
@@ -33,8 +36,11 @@ DUMMY_HASH = (
 logger = logging.getLogger(__name__)
 
 
-class HasherBusyError(Exception):
-    """No slot within the acquire timeout. No hash ran; answer 503 with `Retry-After`."""
+class HasherBusyError(ServiceBusyError):
+    """No slot within the acquire timeout. No hash ran; the app answers 503 with `Retry-After`."""
+
+    def __init__(self) -> None:
+        super().__init__(RETRY_AFTER_S)
 
 
 @dataclass(frozen=True)
@@ -45,7 +51,7 @@ class Verified:
 
 def _verify(stored: str | None, password: str) -> Verified:
     try:
-        HASHER.verify(DUMMY_HASH if stored is None else stored, password)
+        _HASHER.verify(DUMMY_HASH if stored is None else stored, password)
     except VerificationError:
         return Verified(ok=False)
     except InvalidHashError:
@@ -53,7 +59,7 @@ def _verify(stored: str | None, password: str) -> Verified:
         return Verified(ok=False)
     if stored is None:  # no password is known to match the dummy hash; never let one through
         return Verified(ok=False)
-    rehashed = HASHER.hash(password) if HASHER.check_needs_rehash(stored) else None
+    rehashed = _HASHER.hash(password) if _HASHER.check_needs_rehash(stored) else None
     return Verified(ok=True, rehashed=rehashed)
 
 
@@ -65,7 +71,7 @@ class PasswordHashing:
         self._slots = asyncio.Semaphore(SLOTS)
 
     async def hash(self, password: str) -> str:
-        return await self._run(HASHER.hash, password)
+        return await self._run(_HASHER.hash, password)
 
     async def verify(self, stored: str | None, password: str) -> Verified:
         """`stored=None` (unknown email) verifies against the dummy hash and is never ok. A match

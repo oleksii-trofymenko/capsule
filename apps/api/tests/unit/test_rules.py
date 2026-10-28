@@ -1,5 +1,6 @@
 """Email normalisation and the ADR-014 password rules, through the shared schema."""
 
+import re
 import unicodedata
 
 import pytest
@@ -15,6 +16,7 @@ pytestmark = pytest.mark.anyio
 
 EMAIL = "Ada.Lovelace+Capsule@Example.com"
 GOOD = "violet hedgehog 42"
+EMAIL_SHAPE = re.compile(r"[^@\s]+@[^@\s]+\.[^@\s]+")  # the filter in the blocklist header
 
 
 def _errors(**body: str) -> list[tuple[str, str]]:
@@ -98,9 +100,12 @@ def test_blocklisted_passwords_are_refused_in_any_case(common: str) -> None:
 
 def test_blocklist_is_loaded_without_its_header() -> None:
     entries = rules.blocklist()
-    assert len(entries) == 29954
+    assert len(entries) == 29931
     assert not any(e.startswith("#") for e in entries)
     assert all(len(e) >= 12 for e in entries)
+    # Filtered out: email addresses, `$hex[...]` encodings and control characters.
+    assert not any(EMAIL_SHAPE.search(e) or e.startswith("$hex[") for e in entries)
+    assert not any(unicodedata.category(c) == "Cc" for e in entries for c in e)
 
 
 @pytest.mark.parametrize("password", ["my capsule wardrobe", "CAPSULE-2026-ok!", "xxCapsulexxxx"])
@@ -108,11 +113,62 @@ def test_product_name_is_refused(password: str) -> None:
     assert _errors(password=password) == [("password", "password_product_name")]
 
 
-def test_email_local_part_is_refused_on_an_equal_match_only() -> None:
-    email = "Margaret.Hamilton@example.com"
-    same, longer = "MARGARET.HAMILTON", "margaret.hamilton!"
-    assert _errors(email=email, password=same) == [("password", "password_email")]
-    assert NewCredentials(email=email, password=longer).password == longer  # a superstring is fine
+@pytest.mark.parametrize(
+    ("email", "password"),
+    [
+        ("Margaret.Hamilton@example.com", "MARGARET.HAMILTON"),  # equal
+        ("margaret.hamilton@example.com", "margaret.hamilton!"),  # contained
+        ("margaret.hamilton+shop@example.com", "margaret.hamilton!"),  # +tag removed first
+        ("Ada.Lovelace@example.com", "my name is ada.lovelace"),
+        ("grace@example.com", "123 GRACE 456 x"),  # 5 code points: a substring rule
+        ("ab+averylongshoptag@example.com", "AB+averylongshoptag"),  # short base: equal match
+    ],
+)
+def test_email_local_part_is_refused(email: str, password: str) -> None:
+    assert _errors(email=email, password=password) == [("password", "password_email")]
+
+
+@pytest.mark.parametrize(
+    ("email", "password"),
+    [
+        ("ada@example.com", "ada is my cat name"),  # 3 code points: only an equal match counts
+        ("ab+averylongshoptag@example.com", "ab+averylongshoptag!"),
+        ("margaret.hamilton+shop@example.com", "a very long shop tag"),  # the tag alone is fine
+    ],
+)
+def test_email_local_part_allows(email: str, password: str) -> None:
+    assert NewCredentials(email=email, password=password).password == password
+
+
+def test_a_lone_surrogate_password_is_refused_before_any_hash() -> None:
+    surrogate = "violet hedgehog \ud800 42"
+    assert _errors(password=surrogate) == [("password", "password_invalid")]
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        "ada\ud800@example.com",  # lone surrogate
+        "ada lovelace@example.com",  # space
+        "ada@exam\u00a0ple.com",  # no-break space
+        "ada\t@example.com",  # tab inside, not at the ends
+        "ada\x00@example.com",  # C0 control
+        "ada\x85x@example.com",  # C1 control (NEL)
+        "ada\u009f@example.com",  # C1 control
+    ],
+)
+def test_email_with_space_control_or_surrogate_is_refused(bad: str) -> None:
+    assert _errors(email=bad) == [("email", "email_invalid")]
+
+
+def test_validation_errors_hide_the_input() -> None:
+    common = "qwertyuiop123"  # on the blocklist
+    with pytest.raises(ValidationError) as caught:
+        NewCredentials.model_validate({"email": "nope@nowhere", "password": common})
+    text = str(caught.value) + repr(caught.value)
+    assert common not in text
+    assert "nope@nowhere" not in text
+    assert NewCredentials.model_config.get("hide_input_in_errors") is True
 
 
 def test_bad_email_still_checks_the_password() -> None:
@@ -135,6 +191,15 @@ async def test_a_broken_rule_is_a_422_that_never_echoes_the_value() -> None:
     async with client_for(app) as client:
         refused = await client.post("/probe", json={"email": "Ada@Example.com", "password": common})
         accepted = await client.post("/probe", json={"email": "Ada@Example.com", "password": GOOD})
+        # JSON may escape a lone surrogate; it must be a 422, never a 500 from the hash.
+        surrogate = await client.post(
+            "/probe",
+            content=b'{"email": "ada@example.com", "password": "violet hedgehog \\ud800 42"}',
+            headers={"Content-Type": "application/json"},
+        )
+
+    assert surrogate.status_code == 422
+    assert [e["type"] for e in surrogate.json()["errors"]] == ["password_invalid"]
 
     assert refused.status_code == 422
     assert refused.headers["content-type"] == "application/problem+json"

@@ -42,9 +42,10 @@ Password = Annotated[str, AfterValidator(normalise_password)]
 
 class NewCredentials(BaseModel):
     """Email and a new password under the ADR-014 rules. The sign-up request (E1-07) extends it,
-    so the app and the Schemathesis fake apply the same rules. Values are never echoed (422)."""
+    so the app and the Schemathesis fake apply the same rules. Values are never echoed (422),
+    nor shown in a ValidationError that escapes (`hide_input_in_errors`); keep it on subclasses."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
 
     email: Email  # declared first: the password rule below reads the normalised email
     password: Password
