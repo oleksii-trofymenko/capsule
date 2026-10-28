@@ -190,9 +190,10 @@ paths:
       operationId: postAuthLogout
       summary: End this device's session by revoking the family of the given refresh token.
       description: |
-        Always 204, also for an unknown, malformed or already revoked token, so the answer says
-        nothing about the token. Access tokens already issued keep working until they expire
-        (at most 10 minutes). Other devices stay signed in.
+        Any well-formed request body gets 204, whatever the token: unknown, used, already
+        revoked or not a token at all, so the answer says nothing about it. A body that fails
+        the `RefreshRequest` schema gets 422. Access tokens already issued keep working until
+        they expire (at most 10 minutes). Other devices stay signed in.
 
         A 503 means the family was busy; retry after `Retry-After`.
 

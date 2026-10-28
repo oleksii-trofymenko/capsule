@@ -13,7 +13,7 @@ import httpx
 import pytest
 from fastapi import FastAPI
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, create_async_engine
 from sqlalchemy.pool import NullPool
 
 from core.config import database_url_from_env
@@ -353,9 +353,11 @@ async def test_grace_after_the_successor_rotated_revokes_the_family(
 # --- concurrency: real connections queued on the family lock ---
 
 
-async def _hold_family_lock(observer: AsyncEngine, token: str) -> Any:
+async def _hold_family_lock(observer: AsyncEngine, token: str) -> tuple[AsyncConnection, int]:
+    """A connection holding the family row lock, and its backend pid."""
     conn = await observer.connect()
     await conn.begin()
+    pid = (await conn.execute(text("SELECT pg_backend_pid()"))).scalar_one()
     await conn.execute(
         text(
             "SELECT 1 FROM refresh_families f JOIN refresh_tokens t ON t.family_id = f.id"
@@ -363,16 +365,24 @@ async def _hold_family_lock(observer: AsyncEngine, token: str) -> Any:
         ),
         {"hash": h(token)},
     )
-    return conn
+    return conn, pid
 
 
-async def _wait_for_lock_waiters(observer: AsyncEngine, count: int) -> None:
-    query = (
-        "SELECT count(*) FROM pg_stat_activity"
-        " WHERE datname = current_database() AND wait_event_type = 'Lock'"
+# Waiters behind the first one queue on its tuple lock, so they name it, not the blocker.
+_BLOCKED_BY = """
+    WITH RECURSIVE blocked(pid) AS (
+        SELECT pid FROM pg_stat_activity WHERE CAST(:blocker AS int) = ANY(pg_blocking_pids(pid))
+        UNION
+        SELECT a.pid FROM pg_stat_activity a JOIN blocked b ON b.pid = ANY(pg_blocking_pids(a.pid))
     )
+    SELECT count(*) FROM blocked
+"""
+
+
+async def _wait_for_lock_waiters(observer: AsyncEngine, blocker: int, count: int) -> None:
+    """Until `count` backends wait on the blocker, directly or behind another waiter."""
     for _ in range(50):  # about 1 s, well inside the 2 s lock_timeout; polls another process
-        if (await sql(observer, query))[0][0] >= count:
+        if (await sql(observer, _BLOCKED_BY, blocker=blocker))[0][0] >= count:
             return
         await asyncio.sleep(0.02)
     pytest.fail(f"fewer than {count} requests queued on the family lock")
@@ -384,10 +394,10 @@ async def test_concurrent_refreshes_with_the_same_token(
 ) -> None:
     guest = await new_guest(client)
     token = guest["refresh_token"]
-    blocker = await _hold_family_lock(observer, token)
+    blocker, pid = await _hold_family_lock(observer, token)
     try:
         tasks = [asyncio.create_task(refresh(client, token)) for _ in range(requests)]
-        await _wait_for_lock_waiters(observer, requests)  # every request holds a connection
+        await _wait_for_lock_waiters(observer, pid, requests)  # each on a connection of its own
     finally:
         await blocker.rollback()
         await blocker.close()
@@ -422,12 +432,13 @@ async def test_lock_timeout_gets_503_and_the_retry_works(
     guest = await new_guest(client)
     token = guest["refresh_token"]
     family = await family_of(observer, token)
-    blocker = await _hold_family_lock(observer, token)
+    blocker, _ = await _hold_family_lock(observer, token)
     try:
         started = time.perf_counter()
-        busy_refresh = await refresh(client, token)
+        # A lost lock_timeout must fail the test, not hang it.
+        busy_refresh = await asyncio.wait_for(refresh(client, token), 5)
         elapsed = time.perf_counter() - started
-        busy_logout = await client.post(LOGOUT, json={"refresh_token": token})
+        busy_logout = await asyncio.wait_for(client.post(LOGOUT, json={"refresh_token": token}), 5)
     finally:
         await blocker.rollback()
         await blocker.close()
@@ -478,6 +489,37 @@ async def test_logout_revokes_only_this_family_and_always_gets_204(
     assert (await refresh(client, other.json()["refresh_token"])).status_code == 200
 
 
+@pytest.mark.parametrize("presented", ["rotated", "superseded"])
+async def test_logout_with_a_used_token_revokes_and_is_logged_as_reuse(
+    capsys: pytest.CaptureFixture[str], observer: AsyncEngine, presented: str
+) -> None:
+    app = make_app()  # after capsys, so the JSON handler writes to the captured stdout
+    async with client_for(app, lifespan=True) as client:
+        guest, old, lost = await rotated_once(client, observer)
+        graced = await refresh(client, old)  # `lost` becomes superseded
+        assert graced.status_code == 200
+        used = old if presented == "rotated" else lost
+
+        response = await client.post(LOGOUT, json={"refresh_token": used})
+
+        assert response.status_code == 204
+        assert (await family_of(observer, used))["revoked"]
+        assert_unauthorized(await refresh(client, graced.json()["refresh_token"]))
+
+    lines = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    principal = str(principal_of(guest))
+    events = [
+        (line["event"], line["principal_id"], line.get("reason"))
+        for line in lines
+        if line.get("event") in {"reuse_detected", "family_revoked"}
+    ]
+    assert events == [
+        ("reuse_detected", principal, None),
+        ("family_revoked", principal, "reuse"),
+    ]
+    assert used not in json.dumps(lines)
+
+
 # --- last_activity_at (ADR-022) ---
 
 
@@ -487,10 +529,9 @@ async def _activity_after(
     guest = await new_guest(client)
     principal = principal_of(guest)
     token = guest["refresh_token"]
-    if call == "reuse":
-        token = (await refresh(client, token)).json()["refresh_token"]
-        await refresh(client, guest["refresh_token"])  # grace
-        await refresh(client, guest["refresh_token"])  # reuse: revoked
+    if call == "reuse":  # rotate, then use the grace: the next use of `token` is a reuse
+        assert (await refresh(client, token)).status_code == 200
+        assert (await refresh(client, token)).status_code == 200
     await sql(
         observer,
         "UPDATE principals SET last_activity_at = now() - CAST(:age AS interval) WHERE id = :id",
@@ -500,7 +541,11 @@ async def _activity_after(
     if call == "logout":
         assert (await client.post(LOGOUT, json={"refresh_token": token})).status_code == 204
     else:
-        await refresh(client, token)
+        # The measured call itself: the 2xx refresh, or the reuse 401 that revokes the family.
+        expected = 401 if call == "reuse" else 200
+        assert (await refresh(client, token)).status_code == expected
+    if call == "reuse":
+        assert (await family_of(observer, token))["revoked"]
     rows = await sql(
         observer,
         "SELECT last_activity_at > now() - interval '1 minute' FROM principals WHERE id = :id",

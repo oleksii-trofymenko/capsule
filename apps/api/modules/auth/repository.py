@@ -112,35 +112,42 @@ _TOKEN_STATE = text(
     """
     SELECT t.state, t.grace_used_at IS NOT NULL AS grace_used,
            t.rotated_at >= statement_timestamp() - interval '30 seconds' AS in_grace_window,
-           t.successor_hash, s.state AS successor_state
+           s.state AS successor_state
     FROM refresh_tokens t LEFT JOIN refresh_tokens s ON s.token_hash = t.successor_hash
     WHERE t.token_hash = :hash
     """
 )
+# Writes use statement_timestamp() too, on the same clock as the grace-window check.
 _ROTATE = text(
     """
-    UPDATE refresh_tokens SET state = 'rotated', rotated_at = now(), successor_hash = :successor
+    UPDATE refresh_tokens
+    SET state = 'rotated', rotated_at = statement_timestamp(), successor_hash = :successor
     WHERE token_hash = :hash AND state = 'current'
     """
 )
+# Grace only runs when the presented token's successor is the family's one `current` token.
 _SUPERSEDE = text(
-    "UPDATE refresh_tokens SET state = 'superseded' WHERE token_hash = :hash AND state = 'current'"
+    "UPDATE refresh_tokens SET state = 'superseded' WHERE family_id = :family_id"
+    " AND state = 'current'"
 )
 # rotated_at keeps the first rotation time; successor_hash follows the live chain.
 _USE_GRACE = text(
     """
-    UPDATE refresh_tokens SET grace_used_at = now(), successor_hash = :successor
+    UPDATE refresh_tokens SET grace_used_at = statement_timestamp(), successor_hash = :successor
     WHERE token_hash = :hash AND state = 'rotated' AND grace_used_at IS NULL
     """
 )
-_TOUCH_FAMILY = text("UPDATE refresh_families SET last_refreshed_at = now() WHERE id = :id")
+_TOUCH_FAMILY = text(
+    "UPDATE refresh_families SET last_refreshed_at = statement_timestamp() WHERE id = :id"
+)
 _REVOKE_FAMILY = text("UPDATE refresh_families SET revoked_at = now() WHERE id = :id")
+# The token's state tells a logout (`current`) from a used token presented again (A15 reuse).
 _LOGOUT = text(
     """
     UPDATE refresh_families f SET revoked_at = now()
     FROM refresh_tokens t
     WHERE t.token_hash = :hash AND f.id = t.family_id AND f.revoked_at IS NULL
-    RETURNING f.principal_id
+    RETURNING f.principal_id, t.state
     """
 )
 
@@ -157,7 +164,6 @@ class TokenState:
     state: str
     grace_used: bool
     in_grace_window: bool
-    successor_hash: bytes | None
     successor_state: str | None
 
 
@@ -178,13 +184,7 @@ async def token_state(session: AsyncSession, token_hash: bytes) -> TokenState | 
     if row is None:
         return None
     # in_grace_window is NULL for a token that was never rotated.
-    return TokenState(
-        row.state,
-        row.grace_used,
-        bool(row.in_grace_window),
-        row.successor_hash,
-        row.successor_state,
-    )
+    return TokenState(row.state, row.grace_used, bool(row.in_grace_window), row.successor_state)
 
 
 async def rotate_token(session: AsyncSession, token_hash: bytes, successor: bytes) -> None:
@@ -192,10 +192,10 @@ async def rotate_token(session: AsyncSession, token_hash: bytes, successor: byte
 
 
 async def use_grace(
-    session: AsyncSession, token_hash: bytes, superseded: bytes, successor: bytes
+    session: AsyncSession, token_hash: bytes, family_id: uuid.UUID, successor: bytes
 ) -> None:
     """ADR-014 order: the old successor stops being `current` before the new token exists."""
-    await session.execute(_SUPERSEDE, {"hash": superseded})
+    await session.execute(_SUPERSEDE, {"family_id": family_id})
     await session.execute(_USE_GRACE, {"hash": token_hash, "successor": successor})
 
 
@@ -211,9 +211,13 @@ async def revoke_family(session: AsyncSession, family_id: uuid.UUID) -> None:
     await session.execute(_REVOKE_FAMILY, {"id": family_id})
 
 
-async def revoke_family_of(session: AsyncSession, token_hash: bytes) -> uuid.UUID | None:
-    """Logout in one statement. Returns the principal only when a live family was revoked."""
-    principal_id: uuid.UUID | None = (
-        await session.execute(_LOGOUT, {"hash": token_hash})
-    ).scalar_one_or_none()
-    return principal_id
+@dataclass(frozen=True)
+class RevokedFamily:
+    principal_id: uuid.UUID
+    presented_state: str  # not `current`: a used (rotated or superseded) token came back
+
+
+async def revoke_family_of(session: AsyncSession, token_hash: bytes) -> RevokedFamily | None:
+    """Logout in one statement. Returns a value only when a live family was revoked."""
+    row = (await session.execute(_LOGOUT, {"hash": token_hash})).one_or_none()
+    return None if row is None else RevokedFamily(row.principal_id, row.state)

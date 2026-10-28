@@ -8,8 +8,6 @@ from core.db_errors import is_lock_timeout
 from modules.auth.repository import TokenState
 from modules.auth.service import Outcome, decide
 
-SUCCESSOR = b"s" * 32
-
 
 def state(
     current_state: str = "rotated",
@@ -18,7 +16,7 @@ def state(
     in_window: bool = True,
     successor: str | None = "current",
 ) -> TokenState:
-    return TokenState(current_state, grace_used, in_window, SUCCESSOR, successor)
+    return TokenState(current_state, grace_used, in_window, successor)
 
 
 @pytest.mark.parametrize(

@@ -46,6 +46,17 @@ class NewGuest:
     guest_credential: str
 
 
+@dataclass(frozen=True)
+class _Rotated:
+    tokens: IssuedTokens
+    grace: bool
+
+
+@dataclass(frozen=True)
+class _Reused:
+    principal_id: uuid.UUID
+
+
 class AuthService:
     def __init__(self, session: AsyncSession, tokens: TokenService, retention_days: int) -> None:
         self._session = session
@@ -84,68 +95,69 @@ class AuthService:
 
     async def refresh(self, refresh_token: str) -> IssuedTokens:
         """Rotate under the family lock (ADR-014). A reuse commits the revocation, then raises."""
-        presented = hash_secret(refresh_token)
-        successor = new_secret()
         try:
             async with self._session.begin():
-                await repository.set_lock_timeout(self._session)
-                family = await repository.lock_live_family(
-                    self._session, presented, self._retention_days
-                )
-                if family is None:  # unknown, revoked, expired or past retention: nothing changes
-                    raise InvalidRefreshTokenError
-                token = await repository.token_state(self._session, presented)
-                if token is None:
-                    raise InvalidRefreshTokenError
-                outcome = decide(token)
-                access_token = ""
-                if outcome == "reuse":
-                    await repository.revoke_family(self._session, family.id)
-                else:
-                    await self._issue_successor(presented, token, hash_secret(successor), family)
-                    # Inside the transaction: if signing fails, the rotation rolls back.
-                    access_token = self._tokens.issue_access(family.principal_id, family.kind)
+                result = await self._refresh_locked(hash_secret(refresh_token))
         except DBAPIError as exc:
             if is_lock_timeout(exc):
                 raise FamilyBusyError from None
             raise
-        if outcome == "reuse":  # committed above, so the revocation holds before the 401
-            _log_event("reuse_detected", family.principal_id)
-            _log_event("family_revoked", family.principal_id, reason="reuse")
+        # Logged after commit: the revocation holds before the 401 is sent.
+        if isinstance(result, _Reused):
+            _log_reuse(result.principal_id)
             raise InvalidRefreshTokenError
-        if outcome == "grace":
-            _log_event("grace_used", family.principal_id)
-        return IssuedTokens(family.principal_id, access_token, successor)
+        if result.grace:
+            _log_event("grace_used", result.tokens.principal_id)
+        return result.tokens
 
-    async def _issue_successor(
-        self,
-        presented: bytes,
-        token: repository.TokenState,
-        successor: bytes,
-        family: repository.LiveFamily,
-    ) -> None:
-        if token.state == "current":
-            await repository.rotate_token(self._session, presented, successor)
-        elif token.successor_hash is not None:  # grace: decide() saw a current successor
-            await repository.use_grace(self._session, presented, token.successor_hash, successor)
-        else:  # unreachable: a rotated token always names its successor (CHECK constraint)
+    async def _refresh_locked(self, presented: bytes) -> _Rotated | _Reused:
+        await repository.set_lock_timeout(self._session)
+        family = await repository.lock_live_family(self._session, presented, self._retention_days)
+        if family is None:  # unknown, revoked, expired or past retention: nothing changes
             raise InvalidRefreshTokenError
-        await repository.insert_current_token(self._session, family.id, successor)
+        token = await repository.token_state(self._session, presented)
+        if token is None:
+            raise InvalidRefreshTokenError
+        outcome = decide(token)
+        if outcome == "reuse":
+            await repository.revoke_family(self._session, family.id)
+            return _Reused(family.principal_id)
+        successor = new_secret()
+        if outcome == "rotate":
+            await repository.rotate_token(self._session, presented, hash_secret(successor))
+        else:
+            await repository.use_grace(self._session, presented, family.id, hash_secret(successor))
+        await repository.insert_current_token(self._session, family.id, hash_secret(successor))
+        # Inside the transaction: if signing fails, the rotation rolls back.
+        access_token = self._tokens.issue_access(family.principal_id, family.kind)
+        tokens = IssuedTokens(family.principal_id, access_token, successor)
+        return _Rotated(tokens, grace=outcome == "grace")
 
     async def logout(self, refresh_token: str) -> None:
-        """Revoke the token's family. Unknown, used-up and revoked tokens change nothing."""
+        """Revoke the family of any known token of a live family. A used (rotated or superseded)
+        token still revokes, but is logged as reuse (A15). Unknown tokens and revoked families
+        change nothing and log nothing."""
         try:
             async with self._session.begin():
                 await repository.set_lock_timeout(self._session)
-                principal_id = await repository.revoke_family_of(
+                revoked = await repository.revoke_family_of(
                     self._session, hash_secret(refresh_token)
                 )
         except DBAPIError as exc:
             if is_lock_timeout(exc):
                 raise FamilyBusyError from None
             raise
-        if principal_id is not None:
-            _log_event("family_revoked", principal_id, reason="logout")
+        if revoked is None:
+            return
+        if revoked.presented_state == "current":
+            _log_event("family_revoked", revoked.principal_id, reason="logout")
+        else:
+            _log_reuse(revoked.principal_id)
+
+
+def _log_reuse(principal_id: uuid.UUID) -> None:
+    _log_event("reuse_detected", principal_id)
+    _log_event("family_revoked", principal_id, reason="reuse")
 
 
 def decide(token: repository.TokenState) -> Outcome:
