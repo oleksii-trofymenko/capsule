@@ -7,7 +7,7 @@
 | Reviewers | code-reviewer, security-engineer |
 | Estimate | M |
 | Metric | Data deletion SLO (added to `docs/metrics.md` by E1-03) |
-| Depends on | E1-07, E1-03 |
+| Depends on | E1-07c, E1-03 |
 | ADRs | retention ADR (E1-03), 008 |
 | Design spec | `docs/design/flows.md` (F10, "Guest data") |
 
@@ -19,7 +19,7 @@ As a guest or account holder, I want to delete everything Capsule holds about me
 
 - [ ] Contract first: delete and export operations for the current principal (e.g. `DELETE /v1/me`, `GET /v1/me/export`). Both work for guests and accounts.
 - [ ] Delete removes every row owned by the principal and revokes all its tokens and credentials before it responds (the app wipes local data only after success, flows.md F10). Calling it again for a deleted principal returns 401, never 500.
-- [ ] In the same transaction, delete writes the principal id to the deletion ledger through the E1-07 writer, and collects the principal's media object keys before the commit (ADR-022).
+- [ ] In the same transaction, delete writes the principal id to the deletion ledger through the E1-07c writer, and collects the principal's media object keys before the commit (ADR-022).
   - After commit and before responding, the writer appends the id to the external ledger file, and the media hook deletes the collected keys.
   - A failed append or a missing ledger disk keeps the deletion, returns success and logs an error with the principal id only.
   - A failed media delete is left to the ADR-008 job.

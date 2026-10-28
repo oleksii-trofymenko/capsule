@@ -1,6 +1,6 @@
 # ADR-025: Schemathesis for property-based API tests, in-process with fakes
 
-- Status: proposed
+- Status: accepted (owner, 2026-10-28)
 - Date: 2026-10-28
 - Deciders: Orchestrator, backend-engineer, security-engineer, project owner
 - Related: E1-06; ADR-016, ADR-018, ADR-019, ADR-020 (partly supersedes its option 2 reasoning)

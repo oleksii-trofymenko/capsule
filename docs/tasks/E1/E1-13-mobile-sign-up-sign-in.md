@@ -7,7 +7,7 @@
 | Reviewers | code-reviewer, security-engineer, product-designer |
 | Estimate | M |
 | Metric | Sign-up conversion (guests who create an account within 7 days of their first guide) |
-| Depends on | E1-07, E1-11, E1-12, E1-20 |
+| Depends on | E1-07, E1-07c, E1-11, E1-12, E1-20 |
 | ADRs | 003, 014 |
 | Design spec | A2 from E1-11 (`docs/design/auth-and-privacy-wireframes.md`) |
 
@@ -18,7 +18,7 @@ As a guest, I want to create an account from the menu, so that my data is kept w
 ## Acceptance criteria
 
 - [ ] A2 sign-up and sign-in are built to the E1-11 spec and copy deck: email, password with show/hide, and the required "I'm 18 or older" checkbox. The submit button is disabled until it is ticked.
-- [ ] Sign-up and sign-in send the guest credential, so guest data moves to the account (E1-07). On success the account tokens replace the guest credential in secure-store, and the guest credential is gone from the device.
+- [ ] Sign-up and sign-in send the guest credential, so guest data moves to the account (E1-07c). On success the account tokens replace the guest credential in secure-store, and the guest credential is gone from the device.
 - [ ] "Email already registered" switches to sign-in with the email kept.
 - [ ] Loading, error, rate-limited (429 with `Retry-After`) and offline states, as specified.
 - [ ] Logout revokes on the server, then wipes secure-store and MMKV (ADR-003), and the app starts again as a new guest. If the server is unreachable, the app still wipes locally, and the card notes this risk.
