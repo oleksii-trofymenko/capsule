@@ -56,10 +56,11 @@ def test_app_serves_exactly_the_declared_operations() -> None:
 
 
 def test_app_declares_the_contract_status_codes() -> None:
-    # FastAPI does not declare the 500 that the middleware returns, so it is left out.
+    # FastAPI does not declare the 500 that the middleware returns, nor the 400 it raises itself
+    # for a body it cannot read, so both are left out.
     def statuses(paths: dict[str, Any]) -> dict[tuple[str, str], set[str]]:
         return {
-            (path, method): set(operation["responses"]) - {"500"}
+            (path, method): set(operation["responses"]) - {"400", "500"}
             for path, item in paths.items()
             for method, operation in item.items()
             if method in HTTP_METHODS
@@ -160,7 +161,7 @@ def test_contract_refresh_describes_the_grace_rule_and_logout_never_401s() -> No
     assert "30 s" in refresh["description"]
     assert "Cache-Control" in refresh["responses"]["200"]["headers"]
     assert refresh["responses"]["401"] == {"$ref": "#/components/responses/Unauthorized"}
-    assert set(logout["responses"]) == {"204", "422", "503", "500"}
+    assert set(logout["responses"]) == {"204", "400", "422", "503", "500"}
     assert "content" not in logout["responses"]["204"]
 
 

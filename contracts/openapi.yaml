@@ -127,6 +127,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/TokenPair"
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "422":
@@ -176,6 +178,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/TokenPair"
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "422":
@@ -213,6 +217,8 @@ paths:
           headers:
             X-Request-ID:
               $ref: "#/components/headers/RequestId"
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "422":
           $ref: "#/components/responses/ValidationError"
         "503":
@@ -235,10 +241,12 @@ components:
       name: X-Request-ID
       in: header
       required: false
-      description: Client correlation id. Ignored and replaced unless it matches the pattern.
+      description: |
+        Client correlation id. A value that is not 1-64 characters of `A-Z`, `a-z`, `0-9` or `-`
+        is not rejected: the server ignores it and uses a new id. No `pattern` here, because an
+        invalid value is accepted, not refused.
       schema:
         type: string
-        pattern: "^[A-Za-z0-9-]{1,64}$"
 
   headers:
     RequestId:
@@ -253,6 +261,24 @@ components:
         const: no-store
 
   responses:
+    BadRequest:
+      description: |
+        The request body could not be read as JSON text (for example, bytes that are not UTF-8).
+        A body that parses but fails the schema gets 422 instead.
+      headers:
+        X-Request-ID:
+          $ref: "#/components/headers/RequestId"
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+          example:
+            type: about:blank
+            title: Bad Request
+            status: 400
+            detail: There was an error parsing the body
+            request_id: 3f1c2a9e0b7d4c55a1e2f3a4b5c6d7e8
+
     Unauthorized:
       description: |
         Missing, malformed, expired or otherwise invalid credentials or tokens. The body is the
