@@ -16,6 +16,14 @@ class GuestSignIn(BaseModel):
     guest_credential: Secret
 
 
+class RefreshRequest(BaseModel):
+    """Body of both refresh and logout."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    refresh_token: Secret
+
+
 class TokenPair(BaseModel):
     access_token: str
     token_type: Literal["Bearer"] = "Bearer"  # noqa: S105 - a scheme name, not a secret

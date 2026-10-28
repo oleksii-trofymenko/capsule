@@ -44,6 +44,7 @@ ALLOWED_EXTRA = (
     "error",
     "event",
     "principal_id",
+    "reason",  # a fixed word for an A15 event, such as `reuse` or `logout`
 )
 
 # Libraries that log URLs, queries or connection details at INFO/DEBUG; only warnings pass.

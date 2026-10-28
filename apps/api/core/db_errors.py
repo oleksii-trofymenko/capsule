@@ -41,6 +41,14 @@ def exception_chain(exc: BaseException) -> Iterator[BaseException]:
         stack.extend(e for e in links if isinstance(e, BaseException))
 
 
+LOCK_NOT_AVAILABLE = "55P03"  # lock_timeout expired
+
+
+def is_lock_timeout(exc: BaseException) -> bool:
+    cause = exc.orig if isinstance(exc, DBAPIError) else exc
+    return isinstance(cause, psycopg.Error) and cause.sqlstate == LOCK_NOT_AVAILABLE
+
+
 def is_db_error(exc: BaseException) -> bool:
     return isinstance(exc, SQLAlchemyError | psycopg.Error)
 

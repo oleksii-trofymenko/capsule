@@ -136,6 +136,34 @@ def test_contract_guest_endpoint_declares_no_store_and_bearer_401() -> None:
     assert "bearerAuth" in contract()["components"]["securitySchemes"]
 
 
+@pytest.mark.parametrize("path", ["/v1/auth/refresh", "/v1/auth/logout"])
+def test_contract_refresh_and_logout_take_no_idempotency_key_and_answer_busy(path: str) -> None:
+    operation = contract()["paths"][path]["post"]
+    busy = contract()["components"]["responses"]["Busy"]
+    body = schema_validator(operation["requestBody"]["content"]["application/json"]["schema"])
+
+    assert "No idempotency key" in operation["description"]
+    assert operation["parameters"] == [{"$ref": "#/components/parameters/RequestId"}]
+    assert operation["responses"]["503"] == {"$ref": "#/components/responses/Busy"}
+    assert busy["headers"]["Retry-After"]["schema"] == {"const": "1"}
+    assert body.is_valid({"refresh_token": "not base64 ?!"})  # malformed reaches the server
+    assert not body.is_valid({"refresh_token": ""})
+    assert not body.is_valid({"refresh_token": "x" * 257})
+    assert not body.is_valid({"refresh_token": "r", "device_id": "d"})
+
+
+def test_contract_refresh_describes_the_grace_rule_and_logout_never_401s() -> None:
+    refresh = contract()["paths"]["/v1/auth/refresh"]["post"]
+    logout = contract()["paths"]["/v1/auth/logout"]["post"]
+
+    assert "Grace rule" in refresh["description"]
+    assert "30 s" in refresh["description"]
+    assert "Cache-Control" in refresh["responses"]["200"]["headers"]
+    assert refresh["responses"]["401"] == {"$ref": "#/components/responses/Unauthorized"}
+    assert set(logout["responses"]) == {"204", "422", "503", "500"}
+    assert "content" not in logout["responses"]["204"]
+
+
 def test_contract_rejects_a_ready_problem_without_failing() -> None:
     validator = schema_validator({"$ref": "#/components/schemas/ReadyProblem"})
     body = {"type": "about:blank", "title": "Service Unavailable", "status": 503}
