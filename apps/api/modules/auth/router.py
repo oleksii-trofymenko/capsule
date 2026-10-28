@@ -24,17 +24,23 @@ router = APIRouter(prefix="/v1/auth", tags=["auth"])
 logger = logging.getLogger(__name__)
 
 NO_STORE = {"Cache-Control": "no-store"}
+# 400 is FastAPI's own answer to a body it cannot read (BadRequest in the contract).
 _RESPONSES: dict[int | str, dict[str, Any]] = {
     200: {"model": TokenPair},
     201: {"model": GuestSession},
+    400: {"model": Problem},
     401: {"model": Problem},
 }
 _REFRESH_RESPONSES: dict[int | str, dict[str, Any]] = {
     200: {"model": TokenPair},
+    400: {"model": Problem},
     401: {"model": Problem},
     503: {"model": Problem},
 }
-_LOGOUT_RESPONSES: dict[int | str, dict[str, Any]] = {503: {"model": Problem}}
+_LOGOUT_RESPONSES: dict[int | str, dict[str, Any]] = {
+    400: {"model": Problem},
+    503: {"model": Problem},
+}
 
 
 def _token_response(body: BaseModel, status: int) -> JSONResponse:

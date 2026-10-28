@@ -30,10 +30,17 @@ from modules.auth.tokens import TokenService, hash_secret, new_secret
 from tests.support import CONTRACT_PATH, dummy_settings
 
 schema = schemathesis.openapi.from_path(CONTRACT_PATH)
+# Coverage tries every boundary and invalid value the schemas define (refresh_token of length 0,
+# 256 and 257, a missing body, a wrong type) on every run; fuzzing adds random cases on top.
+# Its cases run as Hypothesis explicit examples, so `--hypothesis-show-statistics` omits them.
+schema.config.phases.update(phases=["examples", "coverage", "fuzzing"])
 
 
 class FakeAuthService:
-    """In-memory stand-in for AuthService: same methods, same exceptions, real tokens."""
+    """In-memory stand-in for AuthService: same methods, real tokens and hashes.
+
+    Raises the real 401 exceptions; never FamilyBusyError, so 503 is not generated here.
+    """
 
     def __init__(self, tokens: TokenService) -> None:
         self._tokens = tokens
@@ -96,7 +103,8 @@ def app() -> FastAPI:
 
 
 @schema.parametrize()
-# derandomize: a fixed seed, the same cases on every run; database=None: nothing written to disk.
+# derandomize: a fixed seed, the same cases on every run; database=None: no example database
+# (Hypothesis still writes its gitignored `.hypothesis/constants` cache).
 # One app per operation on purpose: the fake keeps its state across that operation's cases, and
 # a function-scoped fixture keeps create_app's logging setup inside the test's own restore.
 @settings(
@@ -112,9 +120,9 @@ def test_every_operation_matches_the_contract(case: schemathesis.Case[Any], app:
     case.call_and_validate(app=app)
 
 
-def _public_methods(cls: type) -> dict[str, inspect.Signature]:
+def _public_methods(cls: type) -> dict[str, tuple[inspect.Signature, bool]]:
     return {
-        name: inspect.signature(member)
+        name: (inspect.signature(member), inspect.iscoroutinefunction(member))
         for name, member in vars(cls).items()
         if callable(member) and not name.startswith("_")
     }
@@ -122,3 +130,11 @@ def _public_methods(cls: type) -> dict[str, inspect.Signature]:
 
 def test_fake_auth_service_has_the_real_methods_and_signatures() -> None:
     assert _public_methods(FakeAuthService) == _public_methods(AuthService)
+
+
+def test_coverage_phase_stays_on() -> None:
+    phases = schema.config.phases
+
+    assert phases.coverage.enabled
+    assert phases.fuzzing.enabled
+    assert not phases.stateful.enabled  # stateless until the contract has links (ADR-025)

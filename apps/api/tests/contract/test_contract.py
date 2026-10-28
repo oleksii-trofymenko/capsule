@@ -56,11 +56,10 @@ def test_app_serves_exactly_the_declared_operations() -> None:
 
 
 def test_app_declares_the_contract_status_codes() -> None:
-    # FastAPI does not declare the 500 that the middleware returns, nor the 400 it raises itself
-    # for a body it cannot read, so both are left out.
+    # FastAPI does not declare the 500 that the middleware returns, so it is left out.
     def statuses(paths: dict[str, Any]) -> dict[tuple[str, str], set[str]]:
         return {
-            (path, method): set(operation["responses"]) - {"400", "500"}
+            (path, method): set(operation["responses"]) - {"500"}
             for path, item in paths.items()
             for method, operation in item.items()
             if method in HTTP_METHODS
@@ -92,6 +91,22 @@ async def test_ready_matches_contract(postgres: object, redis: object, status: i
 
     assert response.status_code == status
     assert_matches_contract(response, "/v1/ready")
+
+
+@pytest.mark.anyio
+async def test_unreadable_body_gets_the_contract_bad_request() -> None:
+    async with client_for(create_app(dummy_settings())) as client:
+        response = await client.post(
+            "/v1/auth/refresh",
+            content=bytes([0xFF, 0xFE, 0x7B]),  # not UTF-8: FastAPI cannot read it as JSON text
+            headers={"Content-Type": "application/json", "X-Request-ID": "bad-body-1"},
+        )
+
+    assert response.status_code == 400
+    assert response.headers["content-type"] == "application/problem+json"
+    assert response.headers["X-Request-ID"] == "bad-body-1"
+    assert response.json()["request_id"] == "bad-body-1"
+    assert_matches_contract(response, "/v1/auth/refresh", "post")
 
 
 @pytest.mark.anyio
