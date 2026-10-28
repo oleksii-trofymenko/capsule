@@ -221,3 +221,46 @@ async def revoke_family_of(session: AsyncSession, token_hash: bytes) -> RevokedF
     """Logout in one statement. Returns a value only when a live family was revoked."""
     row = (await session.execute(_LOGOUT, {"hash": token_hash})).one_or_none()
     return None if row is None else RevokedFamily(row.principal_id, row.state)
+
+
+# --- accounts (E1-07): the email is stored normalised (modules/auth/rules.py).
+
+_ACCOUNT_BY_EMAIL = text("SELECT principal_id, password_hash FROM accounts WHERE email = :email")
+_INSERT_ACCOUNT = text(
+    """
+    INSERT INTO accounts (principal_id, email, password_hash, age_confirmed_at)
+    VALUES (:principal_id, :email, :password_hash, now())
+    """
+)
+# Compare-and-set: a hash changed meanwhile (E1-17 reset) is never overwritten by a rehash.
+_REHASH = text(
+    """
+    UPDATE accounts SET password_hash = :new
+    WHERE principal_id = :principal_id AND password_hash = :old
+    """
+)
+ACCOUNTS_EMAIL_KEY = "accounts_email_key"
+
+
+@dataclass(frozen=True)
+class Account:
+    principal_id: uuid.UUID
+    password_hash: str
+
+
+async def find_account(session: AsyncSession, email: str) -> Account | None:
+    row = (await session.execute(_ACCOUNT_BY_EMAIL, {"email": email})).one_or_none()
+    return None if row is None else Account(row.principal_id, row.password_hash)
+
+
+async def insert_account(
+    session: AsyncSession, principal_id: uuid.UUID, email: str, password_hash: str
+) -> None:
+    params = {"principal_id": principal_id, "email": email, "password_hash": password_hash}
+    await session.execute(_INSERT_ACCOUNT, params)
+
+
+async def replace_password_hash(
+    session: AsyncSession, principal_id: uuid.UUID, old: str, new: str
+) -> None:
+    await session.execute(_REHASH, {"principal_id": principal_id, "old": old, "new": new})

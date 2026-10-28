@@ -2,9 +2,25 @@
 
 from typing import Annotated, Literal
 
-from pydantic import AfterValidator, BaseModel, ConfigDict, Field, ValidationInfo, field_validator
+from pydantic import (
+    AfterValidator,
+    BaseModel,
+    ConfigDict,
+    Field,
+    StrictBool,
+    ValidationInfo,
+    field_validator,
+)
+from pydantic_core import PydanticCustomError
 
-from modules.auth.rules import check_new_password, normalise_email, normalise_password
+from modules.auth.rules import (
+    MAX_EMAIL_LENGTH,
+    MAX_PASSWORD_INPUT_LENGTH,
+    check_input_lengths,
+    check_new_password,
+    normalise_email,
+    normalise_password,
+)
 from modules.auth.tokens import ACCESS_TOKEN_TTL
 
 # No pattern: a malformed value gets the same 401 as an unknown one.
@@ -50,8 +66,39 @@ class NewCredentials(BaseModel):
     email: Email  # declared first: the password rule below reads the normalised email
     password: Password
 
+    @field_validator("email", "password", mode="before")
+    @classmethod
+    def _input_lengths(cls, value: object, info: ValidationInfo) -> object:
+        # The contract's maxLength (and minLength) as sent, before any normalising.
+        return check_input_lengths(info.field_name or "", value)
+
     @field_validator("password")
     @classmethod
     def _password_rules(cls, password: str, info: ValidationInfo) -> str:
         # An invalid email has its own error; the other rules still run without it.
         return check_new_password(password, info.data.get("email", ""))
+
+
+def _confirmed(value: bool) -> bool:
+    if not value:
+        raise PydanticCustomError("age_not_confirmed", "Confirm that you are 18 or older")
+    return value
+
+
+class SignUpRequest(NewCredentials):
+    # StrictBool: JSON `1` is not `true` (the contract's `const: true`).
+    age_confirmed: Annotated[StrictBool, AfterValidator(_confirmed)]
+
+
+class SignInRequest(BaseModel):
+    """Bounded before any verify, without the new-password rules: an old password still signs
+    in. The email is normalised by the service; an invalid one counts as unknown (one 401)."""
+
+    model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
+
+    email: Annotated[str, Field(max_length=MAX_EMAIL_LENGTH)]
+    password: Annotated[
+        str,
+        Field(min_length=1, max_length=MAX_PASSWORD_INPUT_LENGTH),
+        AfterValidator(normalise_password),
+    ]

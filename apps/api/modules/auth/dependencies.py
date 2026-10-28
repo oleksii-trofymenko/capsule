@@ -11,6 +11,7 @@ from core.config import Settings
 from core.db import get_session
 from modules.auth import repository
 from modules.auth.activity import record_activity
+from modules.auth.hashing import PasswordHashing
 from modules.auth.service import AuthService
 from modules.auth.tokens import MAX_ACCESS_TOKEN_LENGTH, InvalidTokenError, Kind, TokenService
 
@@ -37,7 +38,8 @@ def get_auth_service(
     tokens: Annotated[TokenService, Depends(get_token_service)],
 ) -> AuthService:
     settings: Settings = request.app.state.settings
-    return AuthService(session, tokens, settings.guest_retention_days)
+    passwords: PasswordHashing = request.app.state.password_hashing
+    return AuthService(session, tokens, settings.guest_retention_days, passwords)
 
 
 async def current_principal(
