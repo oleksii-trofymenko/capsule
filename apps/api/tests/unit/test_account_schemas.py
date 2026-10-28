@@ -69,12 +69,15 @@ def test_sign_in_bounds_the_password_without_the_new_password_rules() -> None:
     request = SignInRequest(email="Not An Email", password=COMMON)  # an old password still works
     assert request.password == COMMON
     assert request.email == "Not An Email"  # normalised by the service; invalid means unknown
-    assert SignInRequest(email="a@b.co", password=DECOMPOSED).password == COMPOSED
-    empty: dict[str, object] = {"email": "a@b.co", "password": ""}
+    assert SignInRequest(email="ada@example.com", password=DECOMPOSED).password == COMPOSED
+    empty: dict[str, object] = {"email": "ada@example.com", "password": ""}
     assert _error_types(SignInRequest, empty) == ["string_too_short"]
-    too_long: dict[str, object] = {"email": "a@b.co", "password": "x" * 513}
+    too_long: dict[str, object] = {"email": "ada@example.com", "password": "x" * 513}
     assert _error_types(SignInRequest, too_long) == ["string_too_long"]
-    surrogate: dict[str, object] = {"email": "a@b.co", "password": "violet \ud800 hedgehog"}
+    surrogate: dict[str, object] = {
+        "email": "ada@example.com",
+        "password": "violet \ud800 hedgehog",
+    }
     # Refused before any verify; with length bounds Pydantic's own string check catches it first.
     assert _error_types(SignInRequest, surrogate) in (["string_unicode"], ["password_invalid"])
 
@@ -87,7 +90,7 @@ def test_sign_in_hides_input_in_errors() -> None:
 
 @pytest.mark.parametrize(
     ("raw", "normalised"),
-    [(" Ada@Example.COM ", "ada@example.com"), ("not an email", None), ("a@b", None)],
+    [(" Ada@Example.COM ", "ada@example.com"), ("not an email", None), ("ada@example", None)],
 )
 def test_try_normalise_email(raw: str, normalised: str | None) -> None:
     assert try_normalise_email(raw) == normalised

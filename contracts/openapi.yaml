@@ -256,6 +256,10 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/SignUpRequest"
+            example:
+              email: "  Ada.Lovelace+Capsule@Example.COM "
+              password: violet hedgehog 42
+              age_confirmed: true
       responses:
         "201":
           description: The account exists and this is its first token pair.

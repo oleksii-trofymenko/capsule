@@ -262,5 +262,8 @@ async def insert_account(
 
 async def replace_password_hash(
     session: AsyncSession, principal_id: uuid.UUID, old: str, new: str
-) -> None:
-    await session.execute(_REHASH, {"principal_id": principal_id, "old": old, "new": new})
+) -> bool:
+    """False when the stored hash changed since it was read: the newer hash stays."""
+    params = {"principal_id": principal_id, "old": old, "new": new}
+    result = await session.execute(_REHASH, params)
+    return bool(getattr(result, "rowcount", 0) == 1)

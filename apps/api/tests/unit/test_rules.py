@@ -31,7 +31,7 @@ def _errors(**body: str) -> list[tuple[str, str]]:
         (EMAIL, "ada.lovelace+capsule@example.com"),  # case folded; dots and +tag kept
         ("  ada@example.com\t\n", "ada@example.com"),  # trimmed
         ("José@example.com", "josé@example.com"),  # NFC: e + combining acute
-        ("ADA@EXAMPLE.CO.UK", "ada@example.co.uk"),
+        ("ADA@MAIL.EXAMPLE.COM", "ada@mail.example.com"),
     ],
 )
 def test_email_is_normalised(raw: str, normalised: str) -> None:
@@ -167,10 +167,10 @@ def test_email_with_space_control_format_or_surrogate_is_refused(bad: str) -> No
 def test_validation_errors_hide_the_input() -> None:
     common = "qwertyuiop123"  # on the blocklist
     with pytest.raises(ValidationError) as caught:
-        NewCredentials.model_validate({"email": "nope@nowhere", "password": common})
+        NewCredentials.model_validate({"email": "nope@example", "password": common})
     text = str(caught.value) + repr(caught.value)
     assert common not in text
-    assert "nope@nowhere" not in text
+    assert "nope@example" not in text
     assert NewCredentials.model_config.get("hide_input_in_errors") is True
 
 

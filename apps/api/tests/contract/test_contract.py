@@ -209,7 +209,7 @@ def test_contract_sign_up_body_and_the_a7_conflict() -> None:
     good = {"email": "ada@example.com", "password": "violet hedgehog 42", "age_confirmed": True}
 
     assert body.is_valid(good)
-    assert body.is_valid(good | {"email": "  Ada+tag@Example.co.uk "})
+    assert body.is_valid(good | {"email": "  Ada+tag@Example.COM "})
     for bad in (
         {"age_confirmed": False},
         {"age_confirmed": 1},

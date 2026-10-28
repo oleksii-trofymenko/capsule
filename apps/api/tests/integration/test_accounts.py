@@ -25,7 +25,7 @@ from tests.integration.test_auth import (
     sql,
     without_request_id,
 )
-from tests.support import assert_matches_contract, client_for
+from tests.support import BlockingHasher, assert_matches_contract, client_for, fill_hash_slots
 
 pytestmark = [pytest.mark.integration, pytest.mark.anyio]
 
@@ -180,8 +180,10 @@ async def test_two_parallel_sign_ups_with_one_email_get_one_201_and_one_409(
     app = make_app()  # after capsys, so the JSON handler writes to the captured stdout
     email = new_email()
     async with client_for(app, lifespan=True) as client:
-        # Both pass the check before insert, then hash in parallel: the second insert hits the
-        # unique constraint, which must answer the same 409 and log nothing about the email.
+        # The barrier holds each request at its hash until both have done the check before
+        # insert, so both pass it and the second insert always hits the unique constraint, which
+        # must answer the same 409 and log nothing about the email.
+        app.state.password_hashing = _BarrierBeforeHash(app.state.password_hashing)
         first, second = await asyncio.gather(sign_up(client, email), sign_up(client, email))
         rows = await sql(app, "SELECT count(*) AS n FROM accounts WHERE email = :e", e=email)
 
@@ -198,13 +200,11 @@ async def test_two_parallel_sign_ups_with_one_email_get_one_201_and_one_409(
 async def test_sign_up_answers_503_when_every_hash_slot_stays_taken(
     app: FastAPI, client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from tests.unit.test_hashing import _BlockingHasher, _fill_slots
-
     monkeypatch.setattr(hashing, "ACQUIRE_TIMEOUT_S", 0.2)
-    fake = _BlockingHasher()
+    fake = BlockingHasher()
     monkeypatch.setattr(hashing, "_HASHER", fake)
     email = new_email()
-    tasks = await _fill_slots(app.state.password_hashing, fake)
+    tasks = await fill_hash_slots(app.state.password_hashing, fake)
     try:
         busy = await sign_up(client, email)
         busy_sign_in = await sign_in(client, email)
@@ -290,7 +290,9 @@ async def test_wrong_email_and_wrong_password_take_similar_time(client: httpx.As
     assert 0.6 < unknown / wrong < 1.6, timings
 
 
-async def test_sign_in_rehashes_old_parameters(app: FastAPI, client: httpx.AsyncClient) -> None:
+async def test_sign_in_rehashes_old_parameters(
+    app: FastAPI, client: httpx.AsyncClient, caplog: pytest.LogCaptureFixture
+) -> None:
     email = new_email()
     principal = principal_of((await sign_up(client, email)).json())
     weak = PasswordHasher(time_cost=1, memory_cost=8192, parallelism=1, type=Type.ID)
@@ -301,11 +303,67 @@ async def test_sign_in_rehashes_old_parameters(app: FastAPI, client: httpx.Async
         id=principal,
     )
 
+    caplog.clear()
     assert (await sign_in(client, email)).status_code == 200
 
     row = await account_row(app, email)
     assert row.password_hash.startswith("$argon2id$v=19$m=65536,t=3,p=1$")
+    events = [getattr(record, "event", None) for record in caplog.records]
+    assert "password_rehashed" in events
     assert (await sign_in(client, email)).status_code == 200
+
+
+async def test_a_rehash_never_overwrites_a_hash_changed_since_the_verify(
+    app: FastAPI, client: httpx.AsyncClient, caplog: pytest.LogCaptureFixture
+) -> None:
+    email = new_email()
+    principal = principal_of((await sign_up(client, email)).json())
+    weak = PasswordHasher(time_cost=1, memory_cost=8192, parallelism=1, type=Type.ID)
+    await sql(
+        app,
+        "UPDATE accounts SET password_hash = :h WHERE principal_id = :id",
+        h=weak.hash(PASSWORD),
+        id=principal,
+    )
+    newer = await app.state.password_hashing.hash(OTHER)  # as a reset (E1-17) would store it
+    real: PasswordHashing = app.state.password_hashing
+
+    class ChangedDuringVerify:
+        """The verify succeeds with a rehash; meanwhile another request stores a new hash."""
+
+        async def verify(self, stored: str | None, password: str) -> Verified:
+            verified = await real.verify(stored, password)
+            assert verified.rehashed is not None
+            await sql(
+                app,
+                "UPDATE accounts SET password_hash = :h WHERE principal_id = :id",
+                h=newer,
+                id=principal,
+            )
+            return verified
+
+    app.state.password_hashing = ChangedDuringVerify()
+    caplog.clear()
+
+    assert (await sign_in(client, email)).status_code == 200
+
+    assert (await account_row(app, email)).password_hash == newer  # the newer hash survives
+    events = [getattr(record, "event", None) for record in caplog.records]
+    assert "signed_in" in events
+    assert "password_rehashed" not in events  # logged only when the row was written
+
+
+class _BarrierBeforeHash:
+    """Holds every `hash` call until two requests are waiting, then lets both through."""
+
+    def __init__(self, real: PasswordHashing) -> None:
+        self._real = real
+        self._barrier = asyncio.Barrier(2)
+
+    async def hash(self, password: str) -> str:
+        async with asyncio.timeout(5):  # a lost request must fail the test, not hang it
+            await self._barrier.wait()
+        return await self._real.hash(password)
 
 
 class _NoTransactionSpy:

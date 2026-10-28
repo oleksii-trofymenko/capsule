@@ -71,14 +71,20 @@ def try_normalise_email(raw: str) -> str | None:
         return None
 
 
-def check_input_lengths(field: str, value: object) -> object:
-    """The bounds on the value as sent, which the contract states; the rules count again after
-    normalising. Other types pass through to the field's own type error."""
-    if not isinstance(value, str):
-        return value
-    if field == "email" and len(value) > MAX_EMAIL_LENGTH:
+# The bounds on a value as sent, which the contract states; the rules count again after
+# normalising. A value of another type passes through to the field's own type error.
+
+
+def check_email_as_sent(value: object) -> object:
+    if isinstance(value, str) and len(value) > MAX_EMAIL_LENGTH:
         raise PydanticCustomError("email_invalid", "Enter a valid email address")
-    if field == "password" and not MIN_PASSWORD_LENGTH <= len(value) <= MAX_PASSWORD_INPUT_LENGTH:
+    return value
+
+
+def check_password_as_sent(value: object) -> object:
+    if isinstance(value, str) and not (
+        MIN_PASSWORD_LENGTH <= len(value) <= MAX_PASSWORD_INPUT_LENGTH
+    ):
         raise _password_length()
     return value
 

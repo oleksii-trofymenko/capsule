@@ -16,8 +16,9 @@ from pydantic_core import PydanticCustomError
 from modules.auth.rules import (
     MAX_EMAIL_LENGTH,
     MAX_PASSWORD_INPUT_LENGTH,
-    check_input_lengths,
+    check_email_as_sent,
     check_new_password,
+    check_password_as_sent,
     normalise_email,
     normalise_password,
 )
@@ -66,11 +67,9 @@ class NewCredentials(BaseModel):
     email: Email  # declared first: the password rule below reads the normalised email
     password: Password
 
-    @field_validator("email", "password", mode="before")
-    @classmethod
-    def _input_lengths(cls, value: object, info: ValidationInfo) -> object:
-        # The contract's maxLength (and minLength) as sent, before any normalising.
-        return check_input_lengths(info.field_name or "", value)
+    # The contract's maxLength (and minLength) as sent, before any normalising.
+    _email_as_sent = field_validator("email", mode="before")(check_email_as_sent)
+    _password_as_sent = field_validator("password", mode="before")(check_password_as_sent)
 
     @field_validator("password")
     @classmethod

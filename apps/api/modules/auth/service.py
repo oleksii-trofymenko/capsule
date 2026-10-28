@@ -145,14 +145,15 @@ class AuthService:
         if account is None or not verified.ok:
             _log_event("sign_in_failed", None if account is None else account.principal_id)
             raise InvalidSignInError
+        rehashed = False
         async with self._session.begin():
             if verified.rehashed is not None:
-                await repository.replace_password_hash(
+                rehashed = await repository.replace_password_hash(
                     self._session, account.principal_id, account.password_hash, verified.rehashed
                 )
             tokens = await self._new_family(account.principal_id, "account")
         _log_event("signed_in", account.principal_id)
-        if verified.rehashed is not None:
+        if rehashed:
             _log_event("password_rehashed", account.principal_id)
         return tokens
 

@@ -1,7 +1,10 @@
 """Shared test helpers: an in-process HTTP client and checks against contracts/openapi.yaml."""
 
+import asyncio
 import re
-from collections.abc import AsyncIterator
+import threading
+import time
+from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from functools import cache
 from pathlib import Path
@@ -15,6 +18,8 @@ from jsonschema import Draft202012Validator
 from pydantic import SecretBytes
 
 from core.config import Settings, SigningKey
+from modules.auth import hashing
+from modules.auth.hashing import PasswordHashing
 
 CONTRACT_PATH = Path(__file__).resolve().parents[3] / "contracts" / "openapi.yaml"
 ALEMBIC_INI = Path(__file__).resolve().parents[1] / "alembic.ini"
@@ -88,3 +93,39 @@ def assert_matches_contract(response: httpx.Response, path: str, method: str = "
 
     assert "X-Request-ID" in spec.get("headers", {})
     assert REQUEST_ID.fullmatch(response.headers["X-Request-ID"])
+
+
+class BlockingHasher:
+    """Stands in for the hasher's `hash` (patch `hashing._HASHER`): each call blocks its thread
+    until `release` is set, and counts how many ran and how many ran at once."""
+
+    def __init__(self) -> None:
+        self.release = threading.Event()
+        self.started = 0
+        self.running = 0
+        self.most_running = 0
+        self._lock = threading.Lock()
+
+    def hash(self, _: str) -> str:
+        with self._lock:
+            self.started += 1
+            self.running += 1
+            self.most_running = max(self.most_running, self.running)
+        self.release.wait(5)
+        with self._lock:
+            self.running -= 1
+        return "hashed"
+
+
+async def wait_until(condition: Callable[[], bool], timeout_s: float = 2.0) -> None:
+    deadline = time.monotonic() + timeout_s
+    while not condition():
+        assert time.monotonic() < deadline, "condition not reached"
+        await asyncio.sleep(0.01)
+
+
+async def fill_hash_slots(hasher: PasswordHashing, fake: BlockingHasher) -> list[asyncio.Task[str]]:
+    """Every slot taken by a blocked hash; set `fake.release` and gather the tasks to free them."""
+    tasks = [asyncio.create_task(hasher.hash("a test password")) for _ in range(hashing.SLOTS)]
+    await wait_until(lambda: fake.started == hashing.SLOTS)
+    return tasks

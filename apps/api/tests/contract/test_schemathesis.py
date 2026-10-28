@@ -31,7 +31,7 @@ from modules.auth.service import (
     NewGuest,
 )
 from modules.auth.tokens import Kind, TokenService, hash_secret, new_secret
-from tests.support import CONTRACT_PATH, dummy_settings
+from tests.support import CONTRACT_PATH, client_for, contract, dummy_settings
 
 schema = schemathesis.openapi.from_path(CONTRACT_PATH)
 # Coverage tries every boundary and invalid value the schemas define (refresh_token of length 0,
@@ -162,6 +162,18 @@ RULES_NOT_IN_SCHEMA = {
     "password_email",
     "email_invalid",  # empty labels, control and format characters, length after normalising
 }
+
+
+@pytest.mark.anyio
+async def test_the_contracts_sign_up_example_is_accepted(app: FastAPI) -> None:
+    # The sign-up check above lets a 422 name `email_invalid`; this keeps that exemption from
+    # hiding an email rule stricter than the contract: its own example must get 201.
+    operation = contract()["paths"][SIGN_UP]["post"]
+    example = operation["requestBody"]["content"]["application/json"]["example"]
+    async with client_for(app) as client:
+        response = await client.post(SIGN_UP, json=example)
+
+    assert response.status_code == 201, response.text
 
 
 def _public_methods(cls: type) -> dict[str, tuple[inspect.Signature, bool]]:
