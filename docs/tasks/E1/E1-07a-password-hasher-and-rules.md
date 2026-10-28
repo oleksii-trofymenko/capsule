@@ -1,0 +1,49 @@
+# E1-07a · Password hasher, password rules and email normalisation
+
+| Field | Value |
+| --- | --- |
+| Status | todo |
+| Owner | backend-engineer |
+| Reviewers | code-reviewer, security-engineer |
+| Estimate | S |
+| Metric | API latency (password endpoints): p95 < 600 ms, p99 < 1 s — this card measures the hash time that budget spends |
+| Depends on | E1-05 |
+| ADRs | 014, 023 |
+| Design spec | none |
+
+## Why
+
+Sign-up and sign-in (E1-07) need a password hasher that cannot be used to exhaust the home server's CPU, the password rules from ADR-014, and one email normalisation rule. Split from E1-07 for size.
+
+## Acceptance criteria
+
+- [ ] `argon2-cffi` as ADR-023 names it, added to the runtime dependencies and the lock, with every new package released at least 7 days earlier (ADR-018/019). pip-audit clean.
+- [ ] argon2id with the ADR-014 parameters. A constant dummy hash with the same parameters for unknown emails; a test asserts it does not need rehashing.
+- [ ] `asyncio.Semaphore(4)`, acquired with a 1 s timeout, in front of a dedicated 4-thread executor created in the lifespan. A timeout raises an error that maps to 503 with `Retry-After: 1` and runs no hash. A slot is released only when its hash thread finishes, so a cancelled request never lets a fifth hash run. Hashing never runs inside a database transaction.
+- [ ] Password rules from ADR-014 (length in code points after NFC, blocklist, the product name, the email's local part), checked by a Pydantic validator that the real app and the Schemathesis fake share. A broken rule returns 422 and never echoes the value.
+- [ ] The blocklist is a data file in `modules/auth/data/` from a permissively licensed source (proposed: SecLists, MIT), filtered to the minimum length; source, version and licence recorded in the file header.
+- [ ] Email normalisation from ADR-014 (trim, NFC, lower case; `+tag` and dots kept), with the 254-character limit checked after normalising.
+- [ ] Hash and verify time on the home PC recorded in the card.
+- [ ] Tests: unit for the parameters, the dummy hash, rules at the boundaries (11/12 and 128/129 code points), normalisation variants, a semaphore timeout that runs no hash, and a cancelled caller holding its slot.
+
+## Allowed files
+
+- `apps/api/modules/auth/**`, `apps/api/core/**`, `apps/api/main.py`
+- `apps/api/pyproject.toml`, `apps/api/uv.lock`
+- `apps/api/tests/**`
+
+## Out of scope
+
+- Endpoints (E1-07). Rate limits (E1-08), which go in front of the semaphore.
+
+## Analytics events
+
+- none
+
+## Notes (filled while working)
+
+- Plan approved: 2026-10-28 (Orchestrator), from the backend-engineer E1-07 plan, part A.
+- Decisions:
+  - Filed 2026-10-28: split from E1-07.
+- Numbers:
+- Left for later:

@@ -36,6 +36,7 @@ Events and properties are listed in `docs/design/flows.md` (Analytics) until the
 | Secrets in repository | 0 | gitleaks in pre-commit and CI |
 | Decisions on record | Every stack choice has an accepted ADR | `docs/adr/README.md` |
 | API latency (simple endpoints) | p95 < 200 ms, p99 < 500 ms | k6 + Grafana |
+| API latency (password endpoints: sign-up, sign-in) | p95 < 600 ms, p99 < 1 s (one argon2id hash at the ADR-014 parameters) | k6 + Grafana |
 | Time to first guide token | p95 < 3 s on the local GPU | Langfuse |
 | Full guide | p95 < 25 s (revise after benchmark) | Langfuse, eval report |
 | Voice note (30 s) to text | p95 < 5 s | Worker metric |
