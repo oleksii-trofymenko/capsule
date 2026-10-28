@@ -29,8 +29,13 @@ def _is_utf8(value: str) -> bool:
     return True
 
 
+# Cc: C0 and C1 controls. Cf: invisible format characters (zero-width space, bidi overrides,
+# soft hyphen), which would let two addresses that look the same be different accounts.
+_REFUSED_CATEGORIES = frozenset({"Cc", "Cf"})
+
+
 def _has_space_or_control(value: str) -> bool:
-    return any(c.isspace() or unicodedata.category(c) == "Cc" for c in value)  # Cc: C0 and C1
+    return any(c.isspace() or unicodedata.category(c) in _REFUSED_CATEGORIES for c in value)
 
 
 def normalise_email(raw: str) -> str:

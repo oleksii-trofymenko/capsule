@@ -155,9 +155,12 @@ def test_a_lone_surrogate_password_is_refused_before_any_hash() -> None:
         "ada\x00@example.com",  # C0 control
         "ada\x85x@example.com",  # C1 control (NEL)
         "ada\u009f@example.com",  # C1 control
+        "ad\u200ba@example.com",  # Cf: zero-width space
+        "ad\u202ea@example.com",  # Cf: right-to-left override
+        "ad\u00ada@example.com",  # Cf: soft hyphen
     ],
 )
-def test_email_with_space_control_or_surrogate_is_refused(bad: str) -> None:
+def test_email_with_space_control_format_or_surrogate_is_refused(bad: str) -> None:
     assert _errors(email=bad) == [("email", "email_invalid")]
 
 
