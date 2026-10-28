@@ -134,6 +134,91 @@ paths:
         "500":
           $ref: "#/components/responses/InternalError"
 
+  /v1/auth/refresh:
+    post:
+      operationId: postAuthRefresh
+      summary: Swap a refresh token for a new token pair. The presented token stops working.
+      description: |
+        Every success rotates the refresh token: store the new `refresh_token` and drop the old
+        one. A token family ends 30 days after its last refresh or 90 days after it was created.
+        An unknown, malformed, expired or revoked token gets the same 401; an unknown one revokes
+        nothing. A guest with no activity within the guest retention also gets that 401.
+
+        Grace rule (ADR-014, R6): if the response to a refresh was lost, the token sent in it may
+        be sent once more within 30 s of its first use, as long as the token issued for it has
+        never been used. That retry gets a new pair, and the pair from the lost response stops
+        working. Sending any other used token (a second retry, a retry after 30 s, or a token
+        already replaced) revokes the whole family and gets 401: sign in again.
+
+        A 503 means the family was busy; the token is still valid, so retry the same request
+        after `Retry-After`. Never treat a 503 as a logout.
+
+        No idempotency key: replaying a stored response would mean storing the raw refresh token
+        (A4). The grace rule is the recovery path for a lost response.
+      tags: [auth]
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RefreshRequest"
+      responses:
+        "200":
+          description: A new token pair. The presented refresh token is used up.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/RequestId"
+            Cache-Control:
+              $ref: "#/components/headers/NoStore"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TokenPair"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "503":
+          $ref: "#/components/responses/Busy"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /v1/auth/logout:
+    post:
+      operationId: postAuthLogout
+      summary: End this device's session by revoking the family of the given refresh token.
+      description: |
+        Always 204, also for an unknown, malformed or already revoked token, so the answer says
+        nothing about the token. Access tokens already issued keep working until they expire
+        (at most 10 minutes). Other devices stay signed in.
+
+        A 503 means the family was busy; retry after `Retry-After`.
+
+        No idempotency key: logout creates nothing, and repeating it returns the same 204.
+      tags: [auth]
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RefreshRequest"
+      responses:
+        "204":
+          description: The family is revoked, or the token matched no live family.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/RequestId"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "503":
+          $ref: "#/components/responses/Busy"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
 components:
   securitySchemes:
     bearerAuth:
@@ -197,6 +282,26 @@ components:
           schema:
             $ref: "#/components/schemas/ValidationProblem"
 
+    Busy:
+      description: |
+        The resource was locked by a concurrent request for longer than the server waits (2 s).
+        Nothing changed; retry the same request after `Retry-After` seconds.
+      headers:
+        X-Request-ID:
+          $ref: "#/components/headers/RequestId"
+        Retry-After:
+          schema:
+            const: "1"
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+          example:
+            type: about:blank
+            title: Service Unavailable
+            status: 503
+            request_id: 3f1c2a9e0b7d4c55a1e2f3a4b5c6d7e8
+
     InternalError:
       description: Unexpected server error. No internal details are returned.
       headers:
@@ -255,6 +360,14 @@ components:
       required: [guest_credential]
       properties:
         guest_credential:
+          $ref: "#/components/schemas/Secret"
+
+    RefreshRequest:
+      type: object
+      additionalProperties: false
+      required: [refresh_token]
+      properties:
+        refresh_token:
           $ref: "#/components/schemas/Secret"
 
     TokenPair:

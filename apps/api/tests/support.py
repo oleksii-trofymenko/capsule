@@ -79,9 +79,12 @@ def assert_matches_contract(response: httpx.Response, path: str, method: str = "
     assert status in declared, f"{method.upper()} {path} -> {status} is not in the contract"
     spec = _resolve(declared[status])
 
-    media_type = response.headers["content-type"].split(";")[0].strip()
-    assert media_type in spec["content"], f"{media_type} not declared for {status}"
-    schema_validator(spec["content"][media_type]["schema"]).validate(response.json())
+    if "content" in spec:
+        media_type = response.headers["content-type"].split(";")[0].strip()
+        assert media_type in spec["content"], f"{media_type} not declared for {status}"
+        schema_validator(spec["content"][media_type]["schema"]).validate(response.json())
+    else:
+        assert response.content == b"", f"{status} declares no body"
 
     assert "X-Request-ID" in spec.get("headers", {})
     assert REQUEST_ID.fullmatch(response.headers["X-Request-ID"])
