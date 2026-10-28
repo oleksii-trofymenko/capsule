@@ -48,6 +48,7 @@ Hardening follow-ups from E1-05a and E1-05b:
 - E1-27 (migration lock timeout), E1-28 (`REDIS_URL` error leak) and E1-29 (`.env` ACL after a failed first run) at any time.
 - E1-31 (module-boundary lint) after E1-05.
 - E1-32 (env-init Windows edge cases) after E1-29.
+- E1-33 (stateful Schemathesis run with OpenAPI `links`) after E1-06, any time.
 
 E2-02 (key-age panel) belongs with the first E2 Grafana card.
 

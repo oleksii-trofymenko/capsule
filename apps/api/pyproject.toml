@@ -24,6 +24,7 @@ dev = [
   "types-pyyaml>=6.0.12",             # ADR-020: stubs for mypy strict
   "types-jsonschema>=4.26",           # ADR-020: stubs for mypy strict
   "jsonschema>=4.26,<5",              # ADR-020: validate responses against the contract
+  "schemathesis==4.32.0",            # ADR-025: property-based contract tests (exact pin)
 ]
 
 [tool.uv]

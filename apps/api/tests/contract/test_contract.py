@@ -94,6 +94,22 @@ async def test_ready_matches_contract(postgres: object, redis: object, status: i
 
 
 @pytest.mark.anyio
+async def test_unreadable_body_gets_the_contract_bad_request() -> None:
+    async with client_for(create_app(dummy_settings())) as client:
+        response = await client.post(
+            "/v1/auth/refresh",
+            content=bytes([0xFF, 0xFE, 0x7B]),  # not UTF-8: FastAPI cannot read it as JSON text
+            headers={"Content-Type": "application/json", "X-Request-ID": "bad-body-1"},
+        )
+
+    assert response.status_code == 400
+    assert response.headers["content-type"] == "application/problem+json"
+    assert response.headers["X-Request-ID"] == "bad-body-1"
+    assert response.json()["request_id"] == "bad-body-1"
+    assert_matches_contract(response, "/v1/auth/refresh", "post")
+
+
+@pytest.mark.anyio
 async def test_unknown_path_matches_problem_schema() -> None:
     async with client_for(create_app(dummy_settings())) as client:
         response = await client.get("/v1/nope")
@@ -160,7 +176,7 @@ def test_contract_refresh_describes_the_grace_rule_and_logout_never_401s() -> No
     assert "30 s" in refresh["description"]
     assert "Cache-Control" in refresh["responses"]["200"]["headers"]
     assert refresh["responses"]["401"] == {"$ref": "#/components/responses/Unauthorized"}
-    assert set(logout["responses"]) == {"204", "422", "503", "500"}
+    assert set(logout["responses"]) == {"204", "400", "422", "503", "500"}
     assert "content" not in logout["responses"]["204"]
 
 
