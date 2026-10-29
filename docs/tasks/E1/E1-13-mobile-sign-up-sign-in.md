@@ -49,5 +49,6 @@ All go through `track()` from E1-12.
 - Plan approved:
 - Decisions:
   - Filed 2026-10-27 from the approved E1 plan.
+  - 2026-10-29 (E1-07c security review): if the response is lost after commit, a retry with the same guest credential reports `guest_guides_moved: 0` although the data already moved. Do not tell the user "nothing moved" from that one number.
 - Numbers:
 - Left for later:
