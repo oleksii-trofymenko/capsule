@@ -226,12 +226,7 @@ class AuthService:
         if moved is None:
             return SignedIn(tokens, 0)
         await self._ledger.append(moved.entry)  # raises only when cancelled
-        # The count goes in the message: core/logging.py allows no `count` key yet.
-        security_log.info(
-            "guest_data_moved count=%d",
-            moved.guides,
-            extra={"event": "guest_data_moved", "principal_id": str(tokens.principal_id)},
-        )
+        _log_event("guest_data_moved", tokens.principal_id, count=moved.guides)
         return SignedIn(tokens, moved.guides)
 
     async def _new_family(self, principal_id: uuid.UUID, kind: Kind) -> IssuedTokens:
@@ -331,11 +326,18 @@ def decide(token: repository.TokenState) -> Outcome:
     return "reuse"
 
 
-def _log_event(event: str, principal_id: uuid.UUID | None, reason: str | None = None) -> None:
+def _log_event(
+    event: str,
+    principal_id: uuid.UUID | None,
+    reason: str | None = None,
+    count: int | None = None,
+) -> None:
     """A15. A failed sign-in with an unknown email has no principal id to log."""
-    extra = {"event": event}
+    extra: dict[str, str | int] = {"event": event}
     if principal_id is not None:
         extra["principal_id"] = str(principal_id)
     if reason is not None:
         extra["reason"] = reason
+    if count is not None:
+        extra["count"] = count
     security_log.info(event, extra=extra)

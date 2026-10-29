@@ -5,6 +5,7 @@ import asyncio
 import json
 import uuid
 from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
@@ -90,48 +91,53 @@ async def _waiting_on_locks(app: FastAPI, count: int) -> None:
     pytest.fail(f"fewer than {count} sessions waited for a lock")
 
 
+@asynccontextmanager
+async def _blocker(app: FastAPI, statement: str, **params: object) -> AsyncIterator[None]:
+    """A second connection holding the lock `statement` takes, until the block ends."""
+    async with app.state.engine.connect() as conn:
+        await conn.begin()
+        await conn.execute(text(statement), params)
+        yield
+        await conn.rollback()
+
+
+LOCK_CREDENTIAL = "SELECT 1 FROM guest_credentials WHERE principal_id = :id FOR "
+
+
 # --- the move ---
 
 
-async def test_sign_up_moves_the_guest_and_writes_the_ledger_row_and_line(
-    tmp_path: Path,
+@pytest.mark.parametrize(("path", "mounted"), [(SIGN_UP, True), (SIGN_IN, False)])
+async def test_a_move_deletes_the_guest_and_writes_the_ledger(
+    path: str, mounted: bool, tmp_path: Path
 ) -> None:
-    app = make_app(deletion_ledger_dir=tmp_path)
+    """The row always; the file line only when the directory is there (the table is the
+    record, ADR-022)."""
+    directory = tmp_path if mounted else tmp_path / "not-mounted"
+    app = make_app(deletion_ledger_dir=directory)
     async with client_for(app, lifespan=True) as client:
+        email = new_email()
+        if path == SIGN_IN:
+            assert (await sign_up(client, email)).status_code == 201
         guest = await new_guest(client)
-        response = await _sign_up(client, new_email(), guest["guest_credential"])
-        again = await client.post(GUEST, json={"guest_credential": guest["guest_credential"]})
+        credential, guest_id = guest["guest_credential"], principal_of(guest)
+        move = _sign_up if path == SIGN_UP else _sign_in
+        response = await move(client, email, credential)
+        again = await client.post(GUEST, json={"guest_credential": credential})
 
-        assert response.status_code == 201, response.text
-        assert_matches_contract(response, SIGN_UP, "post")
+        assert response.status_code == (201 if path == SIGN_UP else 200), response.text
+        assert_matches_contract(response, path, "post")
         assert response.json()["guest_guides_moved"] == 0
-        guest_id = principal_of(guest)
+        assert principal_of(response.json()) == await _account_id(app, email)
         assert await _guest_rows(app, guest_id) == MOVED
         [(deleted_at,)] = await sql(
             app, "SELECT deleted_at FROM deletion_ledger WHERE principal_id = :id", id=guest_id
         )
-    assert (tmp_path / FILE_NAME).read_text(encoding="ascii") == (
-        f"{guest_id} {deleted_at.isoformat()}\n"
-    )
     assert_unauthorized(again)  # the credential is gone for good
-
-
-async def test_sign_in_moves_the_guest_even_with_a_missing_ledger_directory(
-    tmp_path: Path,
-) -> None:
-    app = make_app(deletion_ledger_dir=tmp_path / "not-mounted")
-    async with client_for(app, lifespan=True) as client:
-        email = new_email()
-        assert (await sign_up(client, email)).status_code == 201
-        guest = await new_guest(client)
-        response = await _sign_in(client, email, guest["guest_credential"])
-
-        assert response.status_code == 200, response.text
-        assert_matches_contract(response, SIGN_IN, "post")
-        assert response.json()["guest_guides_moved"] == 0
-        assert await _guest_rows(app, principal_of(guest)) == MOVED  # the table is the record
-        me = principal_of(response.json())
-        assert me == await _account_id(app, email)
+    assert directory.exists() == mounted  # never created
+    if mounted:
+        line = f"{guest_id} {deleted_at.isoformat()}\n"
+        assert (directory / FILE_NAME).read_text(encoding="ascii") == line
 
 
 @pytest.mark.parametrize("case", ["unknown", "reused", "expired", "not_a_guest"])
@@ -220,14 +226,8 @@ async def test_a_locked_credential_gets_503_and_nothing_changes(
     guest = await new_guest(client)
     guest_id = principal_of(guest)
     email = new_email()
-    async with app.state.engine.connect() as blocker:
-        await blocker.begin()
-        await blocker.execute(
-            text("SELECT 1 FROM guest_credentials WHERE principal_id = :id FOR UPDATE"),
-            {"id": guest_id},
-        )
+    async with _blocker(app, LOCK_CREDENTIAL + "UPDATE", id=guest_id):
         response = await _sign_up(client, email, guest["guest_credential"])
-        await blocker.rollback()
 
     assert response.status_code == 503
     assert response.headers["Retry-After"] == "1"
@@ -247,19 +247,13 @@ async def test_two_parallel_moves_of_one_guest_move_it_once(
     async with client_for(app, lifespan=True) as client:
         guest = await new_guest(client)
         guest_id = principal_of(guest)
-        async with app.state.engine.connect() as blocker:
-            # A shared lock holds both moves at the credential row, so they race once it goes.
-            await blocker.begin()
-            await blocker.execute(
-                text("SELECT 1 FROM guest_credentials WHERE principal_id = :id FOR SHARE"),
-                {"id": guest_id},
-            )
+        # A shared lock holds both moves at the credential row, so they race once it goes.
+        async with _blocker(app, LOCK_CREDENTIAL + "SHARE", id=guest_id):
             tasks = [
                 asyncio.create_task(_sign_up(client, email, guest["guest_credential"]))
                 for email in emails
             ]
             await _waiting_on_locks(app, 2)
-            await blocker.rollback()
         responses = await asyncio.gather(*tasks)
 
         assert [r.status_code for r in responses] == [201, 201]
@@ -275,16 +269,13 @@ async def test_a_guest_sign_in_racing_a_move_gets_401_not_500(
 ) -> None:
     guest = await new_guest(client)
     credential = guest["guest_credential"]
-    async with app.state.engine.connect() as blocker:
-        # Stalls the real move at its last step, after it locked the credential and deleted
-        # the guest; the guest sign-in then queues behind the move's row lock.
-        await blocker.begin()
-        await blocker.execute(text("LOCK TABLE deletion_ledger IN EXCLUSIVE MODE"))
+    # Stalls the real move at its last step, after it locked the credential and deleted the
+    # guest; the guest sign-in then queues behind the move's row lock.
+    async with _blocker(app, "LOCK TABLE deletion_ledger IN EXCLUSIVE MODE"):
         move = asyncio.create_task(_sign_up(client, new_email(), credential))
         await _waiting_on_locks(app, 1)
         sign_in = asyncio.create_task(client.post(GUEST, json={"guest_credential": credential}))
         await _waiting_on_locks(app, 2)
-        await blocker.rollback()
 
     assert (await move).status_code == 201
     assert_unauthorized(await sign_in)
@@ -315,7 +306,9 @@ async def test_a15_guest_data_moved_carries_the_account_and_the_count_only(
         ("account_created", str(account)),
         ("guest_data_moved", str(account)),
     ]
-    assert a15[-1]["msg"] == "guest_data_moved count=0"
+    assert a15[-1]["msg"] == "guest_data_moved"
+    assert a15[-1]["count"] == 0
+    assert "count" not in a15[0]
     raw = json.dumps(lines)
     for secret in (email, guest["guest_credential"], *response.json().values()):
         if isinstance(secret, str) and len(secret) > 10:
