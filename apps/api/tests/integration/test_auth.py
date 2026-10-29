@@ -20,7 +20,7 @@ from core.config import Settings
 from main import create_app
 from modules.auth import CurrentPrincipal
 from tests.integration.conftest import checked_database_url
-from tests.support import TEST_SIGNING_KEYS, assert_matches_contract, client_for
+from tests.support import A15, TEST_SIGNING_KEYS, assert_matches_contract, client_for
 from tests.unit.test_tokens import forge, valid_claims
 
 pytestmark = [pytest.mark.integration, pytest.mark.anyio]
@@ -425,7 +425,7 @@ async def test_logs_hold_no_secrets_and_a15_events_carry_the_principal(
 
     lines = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
     principal = str(principal_of(guest))
-    events = [(line["event"], line["principal_id"]) for line in lines if "event" in line]
+    events = [(line["event"], line["principal_id"]) for line in lines if line["logger"] == A15]
     assert events == [("guest_created", principal), ("guest_signed_in", principal)]
     raw = json.dumps(lines)
     for secret in (*guest.values(), *signed_in.values()):

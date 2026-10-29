@@ -1,6 +1,7 @@
 """One settings object, read from environment variables. `.env.example` lists every variable."""
 
 from collections.abc import Mapping
+from pathlib import Path
 from typing import Literal, NamedTuple
 from urllib.parse import urlsplit
 
@@ -26,6 +27,7 @@ ENV_VARS: dict[str, str] = {
     "database_connect_timeout_s": "DATABASE_CONNECT_TIMEOUT_S",
     "redis_socket_timeout_s": "REDIS_SOCKET_TIMEOUT_S",
     "guest_retention_days": "GUEST_RETENTION_DAYS",
+    "deletion_ledger_dir": "DELETION_LEDGER_DIR",
 }
 
 
@@ -80,6 +82,9 @@ class Settings(BaseModel):
     # ADR-022: guest data lives at most 30 days after last activity; ADR-014 rejects the guest
     # credential from then on. The E1-10 purge reuses it.
     guest_retention_days: int = Field(default=30, ge=1, le=30)
+    # ADR-022: the deletion ledger directory on the external disk (core/deletion_ledger.py). No
+    # default path: unset (or empty) is logged at start-up and on every deletion, never fatal.
+    deletion_ledger_dir: Path | None = None
     # ADR-015 rotation: the first key signs; the second, if any, only verifies. Empty for
     # processes that hold no signing secret (the worker); create_app refuses to start without.
     signing_keys: tuple[SigningKey, ...] = Field(default=(), max_length=2)
@@ -90,6 +95,11 @@ class Settings(BaseModel):
         if isinstance(value, str):
             return normalise_database_url(value)
         return value
+
+    @field_validator("deletion_ledger_dir", mode="before")
+    @classmethod
+    def _empty_is_unset(cls, value: object) -> object:
+        return None if value == "" else value
 
     @field_validator("redis_url", mode="before")
     @classmethod

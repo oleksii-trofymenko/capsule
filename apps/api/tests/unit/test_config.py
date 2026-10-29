@@ -1,4 +1,5 @@
 from collections.abc import Callable
+from pathlib import Path
 
 import pytest
 from hypothesis import given
@@ -29,6 +30,7 @@ def test_from_env_reads_variables_and_applies_defaults() -> None:
     assert settings.database_connect_timeout_s == 5
     assert settings.redis_socket_timeout_s == 5.0
     assert settings.guest_retention_days == 30
+    assert settings.deletion_ledger_dir is None  # no default path in code (ADR-022)
     assert settings.signing_keys == TEST_SIGNING_KEYS
 
 
@@ -49,6 +51,13 @@ def test_from_env_reads_optional_variables() -> None:
     assert settings.database_connect_timeout_s == 3
     assert settings.redis_socket_timeout_s == 0.75
     assert settings.guest_retention_days == 7
+
+
+@pytest.mark.parametrize(("value", "expected"), [("/srv/ledger", Path("/srv/ledger")), ("", None)])
+def test_deletion_ledger_dir_is_read_and_empty_means_unset(
+    value: str, expected: Path | None
+) -> None:
+    assert _from_env(REQUIRED | {"DELETION_LEDGER_DIR": value}).deletion_ledger_dir == expected
 
 
 def test_missing_variable_is_named() -> None:
