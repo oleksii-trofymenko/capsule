@@ -77,6 +77,8 @@ async def find_active_guest(
 # set_lock_timeout and locks the credential row, so only one move deletes a given guest.
 
 _LOCK_ACTIVE_GUEST = text(_ACTIVE_GUEST + " FOR UPDATE OF c")
+# Back to the session's own value for the rest of the transaction (still transaction-scoped).
+_DEFAULT_LOCK_TIMEOUT = text("SET LOCAL lock_timeout TO DEFAULT")
 # Cascades to the guest's credential and refresh families (and their tokens).
 _DELETE_GUEST = text("DELETE FROM principals WHERE id = :id AND kind = 'guest'")
 
@@ -90,6 +92,10 @@ async def lock_active_guest(
         await session.execute(_LOCK_ACTIVE_GUEST, params)
     ).scalar_one_or_none()
     return principal_id
+
+
+async def default_lock_timeout(session: AsyncSession) -> None:
+    await session.execute(_DEFAULT_LOCK_TIMEOUT)
 
 
 async def move_guest_data(session: AsyncSession, guest_id: uuid.UUID, account_id: uuid.UUID) -> int:

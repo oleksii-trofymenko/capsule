@@ -202,13 +202,16 @@ class AuthService:
 
     async def _lock_guest(self, credential: str | None) -> uuid.UUID | None:
         """First in the transaction (lock order: credential, then principals). `lock_timeout`
-        only when a credential is sent, so sign-up and sign-in without one are unchanged."""
+        bounds the credential lock only; every later wait (the email's unique index, a rehash)
+        is as without a credential."""
         if credential is None:
             return None
         await repository.set_lock_timeout(self._session)
-        return await repository.lock_active_guest(
+        guest_id = await repository.lock_active_guest(
             self._session, hash_secret(credential), self._retention_days
         )
+        await repository.default_lock_timeout(self._session)
+        return guest_id
 
     async def _move_guest(self, guest_id: uuid.UUID | None, account_id: uuid.UUID) -> _Moved | None:
         """ADR-014: move the rows, delete the guest, write the ledger row, all in the caller's
@@ -222,11 +225,12 @@ class AuthService:
         return _Moved(entry, guides)
 
     async def _after_move(self, tokens: IssuedTokens, moved: _Moved | None) -> SignedIn:
-        """After commit: the ledger file, then the A15 event under the account's id."""
+        """After commit: the A15 event under the account's id, then the ledger file. The event
+        goes first, so a cancelled append cannot drop it."""
         if moved is None:
             return SignedIn(tokens, 0)
-        await self._ledger.append(moved.entry)  # raises only when cancelled
         _log_event("guest_data_moved", tokens.principal_id, count=moved.guides)
+        await self._ledger.append(moved.entry)  # raises only when cancelled
         return SignedIn(tokens, moved.guides)
 
     async def _new_family(self, principal_id: uuid.UUID, kind: Kind) -> IssuedTokens:

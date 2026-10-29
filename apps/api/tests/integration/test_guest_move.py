@@ -79,12 +79,13 @@ async def _account_id(app: FastAPI, email: str) -> uuid.UUID | None:
 
 
 async def _waiting_on_locks(app: FastAPI, count: int) -> None:
-    """Until `count` sessions of this database wait for a lock (2 s at most)."""
+    """Until `count` sessions of this database wait for a lock: 1 s at most, well inside the
+    2 s `lock_timeout` the waiters may be under."""
     query = (
         "SELECT count(*) FROM pg_stat_activity"
         " WHERE wait_event_type = 'Lock' AND datname = current_database()"
     )
-    for _ in range(200):
+    for _ in range(100):
         if (await sql(app, query))[0][0] >= count:
             return
         await asyncio.sleep(0.01)
@@ -239,29 +240,45 @@ async def test_a_locked_credential_gets_503_and_nothing_changes(
     assert await _guest_rows(app, guest_id) == MOVED
 
 
+@pytest.mark.parametrize("second", [SIGN_UP, SIGN_IN])
 async def test_two_parallel_moves_of_one_guest_move_it_once(
-    capsys: pytest.CaptureFixture[str],
+    second: str, capsys: pytest.CaptureFixture[str]
 ) -> None:
     app = make_app()  # after capsys, so the JSON handler writes to the captured stdout
     emails = [new_email(), new_email()]
     async with client_for(app, lifespan=True) as client:
+        if second == SIGN_IN:
+            assert (await sign_up(client, emails[1])).status_code == 201
         guest = await new_guest(client)
-        guest_id = principal_of(guest)
+        guest_id, credential = principal_of(guest), guest["guest_credential"]
+        moves = [_sign_up(client, emails[0], credential)]
+        moves.append((_sign_up if second == SIGN_UP else _sign_in)(client, emails[1], credential))
         # A shared lock holds both moves at the credential row, so they race once it goes.
         async with _blocker(app, LOCK_CREDENTIAL + "SHARE", id=guest_id):
-            tasks = [
-                asyncio.create_task(_sign_up(client, email, guest["guest_credential"]))
-                for email in emails
-            ]
+            tasks = [asyncio.create_task(move) for move in moves]
             await _waiting_on_locks(app, 2)
         responses = await asyncio.gather(*tasks)
 
-        assert [r.status_code for r in responses] == [201, 201]
+        assert [r.status_code for r in responses] == [201, 201 if second == SIGN_UP else 200]
         assert await _guest_rows(app, guest_id) == MOVED
         accounts = {await _account_id(app, email) for email in emails}
     events = [line for line in _log_lines(capsys) if line.get("event") == "guest_data_moved"]
     assert len(events) == 1
     assert uuid.UUID(events[0]["principal_id"]) in accounts
+
+
+async def test_only_the_credential_lock_is_bounded_by_the_lock_timeout(
+    app: FastAPI, client: httpx.AsyncClient
+) -> None:
+    guest = await new_guest(client)
+    # Holds the move at its ledger insert, after the credential lock, past the 2 s timeout.
+    async with _blocker(app, "LOCK TABLE deletion_ledger IN EXCLUSIVE MODE"):
+        move = asyncio.create_task(_sign_up(client, new_email(), guest["guest_credential"]))
+        await _waiting_on_locks(app, 1)
+        await asyncio.sleep(2.5)
+
+    assert (await move).status_code == 201  # waited, not 503
+    assert await _guest_rows(app, principal_of(guest)) == MOVED
 
 
 async def test_a_guest_sign_in_racing_a_move_gets_401_not_500(
