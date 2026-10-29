@@ -45,6 +45,7 @@ ALLOWED_EXTRA = (
     "event",
     "principal_id",
     "reason",  # a fixed word for an A15 event, such as `reuse` or `logout`
+    "count",  # a number of rows, such as guides moved from a guest (A15 `guest_data_moved`)
 )
 
 # Libraries that log URLs, queries or connection details at INFO/DEBUG; only warnings pass.

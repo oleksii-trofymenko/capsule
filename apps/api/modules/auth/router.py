@@ -15,6 +15,7 @@ from core.errors import Problem, problem_response
 from modules.auth.activity import record_activity
 from modules.auth.dependencies import get_auth_service, unauthorized
 from modules.auth.schemas import (
+    AccountSession,
     GuestSession,
     GuestSignIn,
     RefreshRequest,
@@ -29,6 +30,7 @@ from modules.auth.service import (
     InvalidRefreshTokenError,
     InvalidSignInError,
     IssuedTokens,
+    SignedIn,
 )
 
 router = APIRouter(prefix="/v1/auth", tags=["auth"])
@@ -52,13 +54,13 @@ _LOGOUT_RESPONSES: dict[int | str, dict[str, Any]] = {
     503: {"model": Problem},
 }
 _SIGN_UP_RESPONSES: dict[int | str, dict[str, Any]] = {
-    201: {"model": TokenPair},
+    201: {"model": AccountSession},
     400: {"model": Problem},
     409: {"model": Problem},
     503: {"model": Problem},
 }
 _SIGN_IN_RESPONSES: dict[int | str, dict[str, Any]] = {
-    200: {"model": TokenPair},
+    200: {"model": AccountSession},
     400: {"model": Problem},
     401: {"model": Problem},
     503: {"model": Problem},
@@ -78,6 +80,11 @@ def _token_response(body: BaseModel, status: int) -> JSONResponse:
 
 def _pair(tokens: IssuedTokens) -> dict[str, str]:
     return {"access_token": tokens.access_token, "refresh_token": tokens.refresh_token}
+
+
+def _account_session(signed_in: SignedIn) -> AccountSession:
+    moved = signed_in.guest_guides_moved
+    return AccountSession(**_pair(signed_in.tokens), guest_guides_moved=moved)
 
 
 @router.post("/guest", status_code=201, response_model=None, responses=_RESPONSES)
@@ -134,10 +141,10 @@ async def sign_up(
 ) -> JSONResponse:
     # Rate limits (E1-08) go in front of this handler, before any hash (R8).
     try:
-        tokens = await service.sign_up(body.email, body.password)
+        signed_in = await service.sign_up(body.email, body.password, body.guest_credential)
     except EmailRegisteredError:
         return problem_response(EMAIL_REGISTERED)
-    return _token_response(TokenPair(**_pair(tokens)), 201)
+    return _token_response(_account_session(signed_in), 201)
 
 
 @router.post("/sign-in", response_model=None, responses=_SIGN_IN_RESPONSES)
@@ -148,8 +155,8 @@ async def sign_in(
 ) -> JSONResponse:
     # Rate limits (E1-08) go in front of this handler, before any verify (R8).
     try:
-        tokens = await service.sign_in(body.email, body.password)
+        signed_in = await service.sign_in(body.email, body.password, body.guest_credential)
     except InvalidSignInError:
         raise unauthorized() from None
-    record_activity(request, tokens.principal_id)  # ADR-022: sign-in counts as activity
-    return _token_response(TokenPair(**_pair(tokens)), 200)
+    record_activity(request, signed_in.tokens.principal_id)  # ADR-022: sign-in is activity
+    return _token_response(_account_session(signed_in), 200)

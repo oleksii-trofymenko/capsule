@@ -29,6 +29,7 @@ from modules.auth.service import (
     InvalidSignInError,
     IssuedTokens,
     NewGuest,
+    SignedIn,
 )
 from modules.auth.tokens import Kind, TokenService, hash_secret, new_secret
 from tests.support import CONTRACT_PATH, client_for, contract, dummy_settings
@@ -67,18 +68,28 @@ class FakeAuthService:
             raise InvalidCredentialError
         return self._issue(principal_id, "guest")
 
-    async def sign_up(self, email: str, password: str) -> IssuedTokens:
+    async def sign_up(
+        self, email: str, password: str, guest_credential: str | None = None
+    ) -> SignedIn:
         if email in self._accounts:
             raise EmailRegisteredError
         principal_id = uuid.uuid4()
         self._accounts[email] = (principal_id, hash_secret(password))
-        return self._issue(principal_id, "account")
+        return self._move(self._issue(principal_id, "account"), guest_credential)
 
-    async def sign_in(self, email: str, password: str) -> IssuedTokens:
+    async def sign_in(
+        self, email: str, password: str, guest_credential: str | None = None
+    ) -> SignedIn:
         account = self._accounts.get(try_normalise_email(email) or "")
         if account is None or account[1] != hash_secret(password):
             raise InvalidSignInError
-        return self._issue(account[0], "account")
+        return self._move(self._issue(account[0], "account"), guest_credential)
+
+    def _move(self, tokens: IssuedTokens, guest_credential: str | None) -> SignedIn:
+        """A known guest is consumed; any credential moves 0 guides (no guides before E3)."""
+        if guest_credential is not None:
+            self._guests.pop(hash_secret(guest_credential), None)
+        return SignedIn(tokens, 0)
 
     async def refresh(self, refresh_token: str) -> IssuedTokens:
         known = self._refresh.pop(hash_secret(refresh_token), None)

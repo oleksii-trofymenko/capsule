@@ -49,6 +49,10 @@ class TokenPair(BaseModel):
     refresh_token: str
 
 
+class AccountSession(TokenPair):
+    guest_guides_moved: int
+
+
 class GuestSession(TokenPair):
     guest_credential: str
 
@@ -78,6 +82,14 @@ class NewCredentials(BaseModel):
         return check_new_password(password, info.data.get("email", ""))
 
 
+def _not_null(value: object) -> object:
+    """The guest credential is optional but never `null` (the contract's `GuestCredential`).
+    Defaults are not validated, so only an explicit `null` reaches this."""
+    if value is None:
+        raise PydanticCustomError("string_type", "Input should be a valid string")
+    return value
+
+
 def _confirmed(value: bool) -> bool:
     if not value:
         raise PydanticCustomError("age_not_confirmed", "Confirm that you are 18 or older")
@@ -87,6 +99,9 @@ def _confirmed(value: bool) -> bool:
 class SignUpRequest(NewCredentials):
     # StrictBool: JSON `1` is not `true` (the contract's `const: true`).
     age_confirmed: Annotated[StrictBool, AfterValidator(_confirmed)]
+    guest_credential: Secret | None = None
+
+    _guest_credential = field_validator("guest_credential", mode="before")(_not_null)
 
 
 class SignInRequest(BaseModel):
@@ -101,3 +116,6 @@ class SignInRequest(BaseModel):
         Field(min_length=1, max_length=MAX_PASSWORD_INPUT_LENGTH),
         AfterValidator(normalise_password),
     ]
+    guest_credential: Secret | None = None
+
+    _guest_credential = field_validator("guest_credential", mode="before")(_not_null)

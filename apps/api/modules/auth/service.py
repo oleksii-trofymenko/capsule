@@ -13,6 +13,7 @@ from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.db_errors import is_lock_timeout, is_unique_violation
+from core.deletion_ledger import DeletionLedger, LedgerEntry
 from core.errors import ServiceBusyError
 from modules.auth import repository
 from modules.auth.hashing import PasswordHashing
@@ -42,6 +43,14 @@ class FamilyBusyError(ServiceBusyError):
         super().__init__(retry_after_s=1)
 
 
+class GuestBusyError(ServiceBusyError):
+    """The guest credential stayed locked past `lock_timeout` (another move of the same guest).
+    Nothing changed: no account, no move; the app answers 503 with `Retry-After`."""
+
+    def __init__(self) -> None:
+        super().__init__(retry_after_s=1)
+
+
 class EmailRegisteredError(Exception):
     """Sign-up with an email that has an account (A7). Carries nothing about the account."""
 
@@ -55,6 +64,18 @@ class IssuedTokens:
     principal_id: uuid.UUID
     access_token: str
     refresh_token: str
+
+
+@dataclass(frozen=True)
+class SignedIn:
+    tokens: IssuedTokens
+    guest_guides_moved: int
+
+
+@dataclass(frozen=True)
+class _Moved:
+    entry: LedgerEntry
+    guides: int
 
 
 @dataclass(frozen=True)
@@ -81,11 +102,13 @@ class AuthService:
         tokens: TokenService,
         retention_days: int,
         passwords: PasswordHashing,
+        ledger: DeletionLedger,
     ) -> None:
         self._session = session
         self._tokens = tokens
         self._retention_days = retention_days
         self._passwords = passwords
+        self._ledger = ledger
 
     async def create_guest(self) -> NewGuest:
         credential = new_secret()
@@ -109,9 +132,12 @@ class AuthService:
         _log_event("guest_signed_in", principal_id)
         return tokens
 
-    async def sign_up(self, email: str, password: str) -> IssuedTokens:
+    async def sign_up(
+        self, email: str, password: str, guest_credential: str | None = None
+    ) -> SignedIn:
         """`email` and `password` come normalised and checked (`SignUpRequest`). The A7 conflict
-        comes from the check before the insert; the unique constraint is only the backstop."""
+        comes from the check before the insert; the unique constraint is only the backstop.
+        A guest credential moves its guest in the transaction that creates the account."""
         async with self._session.begin():
             registered = await repository.find_account(self._session, email) is not None
         if registered:
@@ -119,20 +145,28 @@ class AuthService:
         password_hash = await self._passwords.hash(password)  # no transaction open
         try:
             async with self._session.begin():
+                guest_id = await self._lock_guest(guest_credential)
                 principal_id = await repository.insert_principal(self._session, "account")
                 await repository.insert_account(self._session, principal_id, email, password_hash)
                 tokens = await self._new_family(principal_id, "account")
+                moved = await self._move_guest(guest_id, principal_id)
         except IntegrityError as exc:
             # Matched by constraint name; the error text quotes the email and is never used.
             if is_unique_violation(exc, repository.ACCOUNTS_EMAIL_KEY):
                 raise EmailRegisteredError from None
             raise
+        except DBAPIError as exc:
+            _raise_if_guest_busy(exc)
+            raise
         _log_event("account_created", principal_id)
-        return tokens
+        return await self._after_move(tokens, moved)
 
-    async def sign_in(self, email: str, password: str) -> IssuedTokens:
+    async def sign_in(
+        self, email: str, password: str, guest_credential: str | None = None
+    ) -> SignedIn:
         """`password` comes in NFC (`SignInRequest`). An unknown or invalid email runs the same
-        lookup and a verify against the dummy hash, so it costs what a wrong password costs."""
+        lookup and a verify against the dummy hash, so it costs what a wrong password costs.
+        A guest credential moves its guest only after the password is verified."""
         if len(password) > MAX_PASSWORD_LENGTH:  # no account can have it: refused before a hash
             _log_event("sign_in_failed", None)
             raise InvalidSignInError
@@ -146,16 +180,58 @@ class AuthService:
             _log_event("sign_in_failed", None if account is None else account.principal_id)
             raise InvalidSignInError
         rehashed = False
-        async with self._session.begin():
-            if verified.rehashed is not None:
-                rehashed = await repository.replace_password_hash(
-                    self._session, account.principal_id, account.password_hash, verified.rehashed
-                )
-            tokens = await self._new_family(account.principal_id, "account")
+        try:
+            async with self._session.begin():
+                guest_id = await self._lock_guest(guest_credential)
+                if verified.rehashed is not None:
+                    rehashed = await repository.replace_password_hash(
+                        self._session,
+                        account.principal_id,
+                        account.password_hash,
+                        verified.rehashed,
+                    )
+                tokens = await self._new_family(account.principal_id, "account")
+                moved = await self._move_guest(guest_id, account.principal_id)
+        except DBAPIError as exc:
+            _raise_if_guest_busy(exc)
+            raise
         _log_event("signed_in", account.principal_id)
         if rehashed:
             _log_event("password_rehashed", account.principal_id)
-        return tokens
+        return await self._after_move(tokens, moved)
+
+    async def _lock_guest(self, credential: str | None) -> uuid.UUID | None:
+        """First in the transaction (lock order: credential, then principals). `lock_timeout`
+        bounds the credential lock only; every later wait (the email's unique index, a rehash)
+        is as without a credential."""
+        if credential is None:
+            return None
+        await repository.set_lock_timeout(self._session)
+        guest_id = await repository.lock_active_guest(
+            self._session, hash_secret(credential), self._retention_days
+        )
+        await repository.default_lock_timeout(self._session)
+        return guest_id
+
+    async def _move_guest(self, guest_id: uuid.UUID | None, account_id: uuid.UUID) -> _Moved | None:
+        """ADR-014: move the rows, delete the guest, write the ledger row, all in the caller's
+        transaction. Found only by the locked credential, never by email, device or analytics id.
+        """
+        if guest_id is None:
+            return None
+        guides = await repository.move_guest_data(self._session, guest_id, account_id)
+        await repository.delete_guest(self._session, guest_id)
+        entry = await self._ledger.record(self._session, guest_id)
+        return _Moved(entry, guides)
+
+    async def _after_move(self, tokens: IssuedTokens, moved: _Moved | None) -> SignedIn:
+        """After commit: the A15 event under the account's id, then the ledger file. The event
+        goes first, so a cancelled append cannot drop it."""
+        if moved is None:
+            return SignedIn(tokens, 0)
+        _log_event("guest_data_moved", tokens.principal_id, count=moved.guides)
+        await self._ledger.append(moved.entry)  # raises only when cancelled
+        return SignedIn(tokens, moved.guides)
 
     async def _new_family(self, principal_id: uuid.UUID, kind: Kind) -> IssuedTokens:
         refresh_token = new_secret()
@@ -229,6 +305,12 @@ class AuthService:
             _log_reuse(revoked.principal_id)
 
 
+def _raise_if_guest_busy(exc: DBAPIError) -> None:
+    if is_lock_timeout(exc):
+        logger.warning("guest move: guest credential busy")
+        raise GuestBusyError from None
+
+
 def _log_reuse(principal_id: uuid.UUID) -> None:
     _log_event("reuse_detected", principal_id)
     _log_event("family_revoked", principal_id, reason="reuse")
@@ -248,11 +330,18 @@ def decide(token: repository.TokenState) -> Outcome:
     return "reuse"
 
 
-def _log_event(event: str, principal_id: uuid.UUID | None, reason: str | None = None) -> None:
+def _log_event(
+    event: str,
+    principal_id: uuid.UUID | None,
+    reason: str | None = None,
+    count: int | None = None,
+) -> None:
     """A15. A failed sign-in with an unknown email has no principal id to log."""
-    extra = {"event": event}
+    extra: dict[str, str | int] = {"event": event}
     if principal_id is not None:
         extra["principal_id"] = str(principal_id)
     if reason is not None:
         extra["reason"] = reason
+    if count is not None:
+        extra["count"] = count
     security_log.info(event, extra=extra)

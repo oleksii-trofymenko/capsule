@@ -179,7 +179,7 @@ Rules:
 
 ### Logs
 
-- At INFO and above, logs never contain email, password, token, guest credential, IP or request bodies. A deletion is logged as a count with the principal type.
+- At INFO and above, logs never contain email, password, token, guest credential, IP or request bodies. A guest-data move is logged as `guest_data_moved` under the account's principal id, with the count of moved guides. A failed deletion-ledger append logs the deleted principal id and the error type only (ADR-022, restore step 2).
 - Container logs use the `local` driver, capped at 10 MB × 3 files per service. Their retention is set in the retention ADR.
 - Sentry and PostHog rules follow ADR-004 (no PII, auth headers stripped, consent first).
 

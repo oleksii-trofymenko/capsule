@@ -236,3 +236,37 @@ def test_contract_sign_in_body_has_no_password_rules_and_one_401() -> None:
     assert not body.is_valid({"email": "ada@example.com", "password": "x" * 513})
     assert not body.is_valid({"email": "a" * 255, "password": "x"})
     assert operation["responses"]["401"] == {"$ref": "#/components/responses/Unauthorized"}
+
+
+@pytest.mark.parametrize("path", ["/v1/auth/sign-up", "/v1/auth/sign-in"])
+def test_contract_account_session_and_the_optional_guest_credential(path: str) -> None:
+    operation = contract()["paths"][path]["post"]
+    status = "201" if path.endswith("up") else "200"
+    session = schema_validator(_body_schema(operation["responses"][status]))
+    body = schema_validator(operation["requestBody"]["content"]["application/json"]["schema"])
+    good: dict[str, object] = {"email": "ada@example.com", "password": "violet hedgehog 42"}
+    if status == "201":
+        good["age_confirmed"] = True
+    pair = {"access_token": "a.b.c", "token_type": "Bearer", "expires_in": 600}
+
+    assert session.is_valid(pair | {"refresh_token": "r", "guest_guides_moved": 0})
+    assert not session.is_valid(pair | {"refresh_token": "r"})  # always reported
+    assert not session.is_valid(pair | {"refresh_token": "r", "guest_guides_moved": -1})
+    assert body.is_valid(good)
+    assert body.is_valid(good | {"guest_credential": "not base64 ?!"})  # moves nothing, no 422
+    assert not body.is_valid(good | {"guest_credential": None})
+    assert not body.is_valid(good | {"guest_credential": ""})
+    assert not body.is_valid(good | {"guest_credential": "x" * 257})
+    assert "never matched by email, device or analytics id" in _session_doc()
+
+
+def _body_schema(response: dict[str, Any]) -> dict[str, Any]:
+    schema: dict[str, Any] = response["content"]["application/json"]["schema"]
+    return schema
+
+
+def _session_doc() -> str:
+    doc: str = contract()["components"]["schemas"]["AccountSession"]["properties"][
+        "guest_guides_moved"
+    ]["description"]
+    return " ".join(doc.split())

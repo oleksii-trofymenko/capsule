@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import Settings
 from core.db import get_session
+from core.deletion_ledger import DeletionLedger
 from modules.auth import repository
 from modules.auth.activity import record_activity
 from modules.auth.hashing import PasswordHashing
@@ -39,7 +40,8 @@ def get_auth_service(
 ) -> AuthService:
     settings: Settings = request.app.state.settings
     passwords: PasswordHashing = request.app.state.password_hashing
-    return AuthService(session, tokens, settings.guest_retention_days, passwords)
+    ledger: DeletionLedger = request.app.state.deletion_ledger
+    return AuthService(session, tokens, settings.guest_retention_days, passwords, ledger)
 
 
 async def current_principal(
