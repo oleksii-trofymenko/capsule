@@ -58,5 +58,12 @@ As a user with an account, I want my saved guides to survive a disk failure on t
 - Decisions:
   - Filed 2026-10-27: amended from E1-01 threat model (docs/security.md). It replaces the "file a card" note in E1-03.
   - 2026-10-27, owner: Postgres backups are kept for at most 30 days.
+  - 2026-10-29 (E1-07b reviews), inputs for this card:
+    - Ledger file: `deletion-ledger.txt` in `DELETION_LEDGER_DIR` (absolute path, never created by `api`), one line per id: `<uuid> <ISO-8601 UTC>`. Mount that directory into `api`.
+    - An unset `DELETION_LEDGER_DIR` must fail the backup or restore drill, or raise an alert; it must not stay an ERROR line. Alert on `ledger_append_failed` and `ledger_directory_unusable` (ADR-022 "we will monitor"). Api logs rotate by size (10 MB × 3), so restore step 2 cannot rely on them alone: reconcile the file from the table after the disk comes back.
+    - The replay parser validates each line strictly and reports bad lines rather than dropping them (a torn line can run into the next one). Check that `fsync` reaches the disk on the Docker Desktop bind mount.
+    - Replay must not fail on ids already in the restored table (primary key; see E1-09).
+    - A write stuck on a hung disk blocks `api` exit until SIGKILL; consider `stop_grace_period`.
+    - Until this card lands, no real user data goes on the box (security review condition).
 - Numbers:
 - Left for later:

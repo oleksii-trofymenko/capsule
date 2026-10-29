@@ -53,5 +53,6 @@ As a guest or account holder, I want to delete everything Capsule holds about me
 - Plan approved:
 - Decisions:
   - Filed 2026-10-27 from the approved E1 plan.
+  - 2026-10-29 (E1-07b reviews): the ledger writer lives in E1-07b. Recording an id that is already in the ledger raises a primary-key violation and rolls back the caller. Make re-deletion idempotent (for example `ON CONFLICT (principal_id) DO NOTHING`, then read the existing `deleted_at`) if two deletes can race or a restore replay goes through these handlers (E1-23).
 - Numbers:
 - Left for later:
