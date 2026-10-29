@@ -1,6 +1,7 @@
-"""Guest credentials, token pairs, refresh rotation and logout (ADR-014).
+"""Guest credentials, accounts, token pairs, refresh rotation and logout (ADR-014).
 
-Owns its transactions; no FastAPI imports.
+Owns its transactions; no FastAPI imports. A password hash or verify never runs inside a
+transaction: read, commit, hash, then write in a short transaction of its own.
 """
 
 import logging
@@ -8,15 +9,19 @@ import uuid
 from dataclasses import dataclass
 from typing import Literal
 
-from sqlalchemy.exc import DBAPIError
+from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.db_errors import is_lock_timeout
+from core.db_errors import is_lock_timeout, is_unique_violation
+from core.errors import ServiceBusyError
 from modules.auth import repository
-from modules.auth.tokens import TokenService, hash_secret, new_secret
+from modules.auth.hashing import PasswordHashing
+from modules.auth.rules import MAX_PASSWORD_LENGTH, try_normalise_email
+from modules.auth.tokens import Kind, TokenService, hash_secret, new_secret
 
 # A15: security events under the pseudonymous principal id, never a credential, token or IP.
 security_log = logging.getLogger("capsule.security")
+logger = logging.getLogger(__name__)
 
 Outcome = Literal["rotate", "grace", "reuse"]
 
@@ -29,8 +34,20 @@ class InvalidRefreshTokenError(Exception):
     """Unknown, expired, revoked or reused refresh token. No detail on purpose (one 401)."""
 
 
-class FamilyBusyError(Exception):
-    """The family stayed locked past `lock_timeout`. Nothing changed; the token is still valid."""
+class FamilyBusyError(ServiceBusyError):
+    """The family stayed locked past `lock_timeout`. Nothing changed; the token is still valid.
+    The app answers 503 with `Retry-After`; the client must never treat it as a logout."""
+
+    def __init__(self) -> None:
+        super().__init__(retry_after_s=1)
+
+
+class EmailRegisteredError(Exception):
+    """Sign-up with an email that has an account (A7). Carries nothing about the account."""
+
+
+class InvalidSignInError(Exception):
+    """Unknown email or wrong password. No detail on purpose (one 401, A6)."""
 
 
 @dataclass(frozen=True)
@@ -58,10 +75,17 @@ class _Reused:
 
 
 class AuthService:
-    def __init__(self, session: AsyncSession, tokens: TokenService, retention_days: int) -> None:
+    def __init__(
+        self,
+        session: AsyncSession,
+        tokens: TokenService,
+        retention_days: int,
+        passwords: PasswordHashing,
+    ) -> None:
         self._session = session
         self._tokens = tokens
         self._retention_days = retention_days
+        self._passwords = passwords
 
     async def create_guest(self) -> NewGuest:
         credential = new_secret()
@@ -70,7 +94,7 @@ class AuthService:
             await repository.insert_guest_credential(
                 self._session, principal_id, hash_secret(credential)
             )
-            tokens = await self._new_family(principal_id)
+            tokens = await self._new_family(principal_id, "guest")
         _log_event("guest_created", principal_id)
         return NewGuest(tokens, credential)
 
@@ -81,16 +105,64 @@ class AuthService:
             )
             if principal_id is None:
                 raise InvalidCredentialError
-            tokens = await self._new_family(principal_id)
+            tokens = await self._new_family(principal_id, "guest")
         _log_event("guest_signed_in", principal_id)
         return tokens
 
-    async def _new_family(self, principal_id: uuid.UUID) -> IssuedTokens:
+    async def sign_up(self, email: str, password: str) -> IssuedTokens:
+        """`email` and `password` come normalised and checked (`SignUpRequest`). The A7 conflict
+        comes from the check before the insert; the unique constraint is only the backstop."""
+        async with self._session.begin():
+            registered = await repository.find_account(self._session, email) is not None
+        if registered:
+            raise EmailRegisteredError
+        password_hash = await self._passwords.hash(password)  # no transaction open
+        try:
+            async with self._session.begin():
+                principal_id = await repository.insert_principal(self._session, "account")
+                await repository.insert_account(self._session, principal_id, email, password_hash)
+                tokens = await self._new_family(principal_id, "account")
+        except IntegrityError as exc:
+            # Matched by constraint name; the error text quotes the email and is never used.
+            if is_unique_violation(exc, repository.ACCOUNTS_EMAIL_KEY):
+                raise EmailRegisteredError from None
+            raise
+        _log_event("account_created", principal_id)
+        return tokens
+
+    async def sign_in(self, email: str, password: str) -> IssuedTokens:
+        """`password` comes in NFC (`SignInRequest`). An unknown or invalid email runs the same
+        lookup and a verify against the dummy hash, so it costs what a wrong password costs."""
+        if len(password) > MAX_PASSWORD_LENGTH:  # no account can have it: refused before a hash
+            _log_event("sign_in_failed", None)
+            raise InvalidSignInError
+        # An invalid address looks up "", which no account has: the same query either way.
+        lookup = try_normalise_email(email) or ""
+        async with self._session.begin():
+            account = await repository.find_account(self._session, lookup)
+        stored = None if account is None else account.password_hash
+        verified = await self._passwords.verify(stored, password)  # no transaction open
+        if account is None or not verified.ok:
+            _log_event("sign_in_failed", None if account is None else account.principal_id)
+            raise InvalidSignInError
+        rehashed = False
+        async with self._session.begin():
+            if verified.rehashed is not None:
+                rehashed = await repository.replace_password_hash(
+                    self._session, account.principal_id, account.password_hash, verified.rehashed
+                )
+            tokens = await self._new_family(account.principal_id, "account")
+        _log_event("signed_in", account.principal_id)
+        if rehashed:
+            _log_event("password_rehashed", account.principal_id)
+        return tokens
+
+    async def _new_family(self, principal_id: uuid.UUID, kind: Kind) -> IssuedTokens:
         refresh_token = new_secret()
         await repository.insert_family_with_token(
             self._session, principal_id, hash_secret(refresh_token)
         )
-        access_token = self._tokens.issue_access(principal_id, "guest")
+        access_token = self._tokens.issue_access(principal_id, kind)
         return IssuedTokens(principal_id, access_token, refresh_token)
 
     async def refresh(self, refresh_token: str) -> IssuedTokens:
@@ -100,6 +172,7 @@ class AuthService:
                 result = await self._refresh_locked(hash_secret(refresh_token))
         except DBAPIError as exc:
             if is_lock_timeout(exc):
+                logger.warning("refresh: refresh family busy")
                 raise FamilyBusyError from None
             raise
         # Logged after commit: the revocation holds before the 401 is sent.
@@ -145,6 +218,7 @@ class AuthService:
                 )
         except DBAPIError as exc:
             if is_lock_timeout(exc):
+                logger.warning("logout: refresh family busy")
                 raise FamilyBusyError from None
             raise
         if revoked is None:
@@ -174,8 +248,11 @@ def decide(token: repository.TokenState) -> Outcome:
     return "reuse"
 
 
-def _log_event(event: str, principal_id: uuid.UUID, reason: str | None = None) -> None:
-    extra = {"event": event, "principal_id": str(principal_id)}
+def _log_event(event: str, principal_id: uuid.UUID | None, reason: str | None = None) -> None:
+    """A15. A failed sign-in with an unknown email has no principal id to log."""
+    extra = {"event": event}
+    if principal_id is not None:
+        extra["principal_id"] = str(principal_id)
     if reason is not None:
         extra["reason"] = reason
     security_log.info(event, extra=extra)

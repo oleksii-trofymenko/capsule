@@ -12,6 +12,9 @@ from pydantic_core import PydanticCustomError
 MAX_EMAIL_LENGTH = 254
 MIN_PASSWORD_LENGTH = 12  # code points after NFC; a signed-off deviation from NIST (ADR-014)
 MAX_PASSWORD_LENGTH = 128
+# As sent, before NFC: NFC can shorten a decomposed password, so up to 4x the limit may still be
+# 128 after NFC. Bounds the work any request can cause (contracts/openapi.yaml maxLength).
+MAX_PASSWORD_INPUT_LENGTH = 4 * MAX_PASSWORD_LENGTH
 PRODUCT_NAME = "capsule"
 
 _BLOCKLIST_PATH = Path(__file__).parent / "data" / "password-blocklist.txt"
@@ -60,6 +63,40 @@ def normalise_email(raw: str) -> str:
     return email
 
 
+def try_normalise_email(raw: str) -> str | None:
+    """For sign-in: an address that sign-up would refuse cannot have an account."""
+    try:
+        return normalise_email(raw)
+    except PydanticCustomError:
+        return None
+
+
+# The bounds on a value as sent, which the contract states; the rules count again after
+# normalising. A value of another type passes through to the field's own type error.
+
+
+def check_email_as_sent(value: object) -> object:
+    if isinstance(value, str) and len(value) > MAX_EMAIL_LENGTH:
+        raise PydanticCustomError("email_invalid", "Enter a valid email address")
+    return value
+
+
+def check_password_as_sent(value: object) -> object:
+    if isinstance(value, str) and not (
+        MIN_PASSWORD_LENGTH <= len(value) <= MAX_PASSWORD_INPUT_LENGTH
+    ):
+        raise _password_length()
+    return value
+
+
+def _password_length() -> PydanticCustomError:
+    return PydanticCustomError(
+        "password_length",
+        "Password must be {min} to {max} characters",
+        {"min": MIN_PASSWORD_LENGTH, "max": MAX_PASSWORD_LENGTH},
+    )
+
+
 def normalise_password(raw: str) -> str:
     """NFC, the form that is hashed and verified. Length is counted in code points of this form.
     A value that cannot be encoded as UTF-8 (a lone surrogate) is refused before any hash."""
@@ -80,11 +117,7 @@ def blocklist() -> frozenset[str]:
 def check_new_password(password: str, email: str) -> str:
     """The ADR-014 rules for a new password. `password` and `email` are already normalised."""
     if not MIN_PASSWORD_LENGTH <= len(password) <= MAX_PASSWORD_LENGTH:
-        raise PydanticCustomError(
-            "password_length",
-            "Password must be {min} to {max} characters",
-            {"min": MIN_PASSWORD_LENGTH, "max": MAX_PASSWORD_LENGTH},
-        )
+        raise _password_length()
     folded = password.casefold()
     if folded in blocklist():
         raise PydanticCustomError("password_common", "Password is too common")

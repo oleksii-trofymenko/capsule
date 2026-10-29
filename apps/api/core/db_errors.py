@@ -49,6 +49,19 @@ def is_lock_timeout(exc: BaseException) -> bool:
     return isinstance(cause, psycopg.Error) and cause.sqlstate == LOCK_NOT_AVAILABLE
 
 
+UNIQUE_VIOLATION = "23505"
+
+
+def is_unique_violation(exc: BaseException, constraint: str) -> bool:
+    """Matched on SQLSTATE and constraint name only, never on the message (it quotes the row)."""
+    cause = exc.orig if isinstance(exc, DBAPIError) else exc
+    return (
+        isinstance(cause, psycopg.Error)
+        and cause.sqlstate == UNIQUE_VIOLATION
+        and cause.diag.constraint_name == constraint
+    )
+
+
 def is_db_error(exc: BaseException) -> bool:
     return isinstance(exc, SQLAlchemyError | psycopg.Error)
 

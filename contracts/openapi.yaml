@@ -12,7 +12,7 @@ tags:
   - name: ops
     description: Liveness and readiness for Compose and the uptime monitor.
   - name: auth
-    description: Guest credentials and token pairs (ADR-014).
+    description: Guest credentials, accounts and token pairs (ADR-014).
 
 paths:
   /v1/health:
@@ -197,7 +197,8 @@ paths:
         Any well-formed request body gets 204, whatever the token: unknown, used, already
         revoked or not a token at all, so the answer says nothing about it. A body that fails
         the `RefreshRequest` schema gets 422. Access tokens already issued keep working until
-        they expire (at most 10 minutes). Other devices stay signed in.
+        they expire (at most 10 minutes). Other devices stay signed in, guests and accounts
+        alike: each sign-in has its own family.
 
         A 503 means the family was busy; retry after `Retry-After`.
 
@@ -219,6 +220,107 @@ paths:
               $ref: "#/components/headers/RequestId"
         "400":
           $ref: "#/components/responses/BadRequest"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "503":
+          $ref: "#/components/responses/Busy"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /v1/auth/sign-up:
+    post:
+      operationId: postAuthSignUp
+      summary: Create an account with an email and a password, and start its first session.
+      description: |
+        The email is normalised (trimmed, NFC, lower case; `+tag` and dots kept). The password
+        must be 12 to 128 characters after NFC and must not be a common password, contain the
+        app name or contain the email's name (the part before `@`, without `+tag`). A refused
+        password gets 422 with an `errors[].type` that names the rule, never the value.
+        `age_confirmed` must be `true` (the user is 18 or older); only the time of the
+        confirmation is stored.
+
+        An email that is already registered gets 409 with the `EmailRegistered` problem type:
+        offer sign-in instead. It says nothing else about the account.
+
+        A 503 means the password hasher was busy; nothing was created, so retry after
+        `Retry-After`.
+
+        No idempotency key: replaying a stored response would mean storing the raw refresh token
+        (A4). A retry after a lost 201 gets 409; sign in with the same password.
+      tags: [auth]
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SignUpRequest"
+            example:
+              email: "  Ada.Lovelace+Capsule@Example.COM "
+              password: violet hedgehog 42
+              age_confirmed: true
+      responses:
+        "201":
+          description: The account exists and this is its first token pair.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/RequestId"
+            Cache-Control:
+              $ref: "#/components/headers/NoStore"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TokenPair"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "409":
+          $ref: "#/components/responses/EmailRegistered"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "503":
+          $ref: "#/components/responses/Busy"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /v1/auth/sign-in:
+    post:
+      operationId: postAuthSignIn
+      summary: Start a new session for an account with its email and password.
+      description: |
+        The email is normalised as on sign-up. An unknown email and a wrong password get the
+        same 401, after the same work on the server. Each sign-in starts a new token family for
+        this device; logout ends only that family.
+
+        A 503 means the password hasher was busy; retry after `Retry-After`.
+
+        No idempotency key: replaying a stored response would mean storing the raw refresh token
+        (A4). A retry after a lost 200 signs in again.
+      tags: [auth]
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SignInRequest"
+      responses:
+        "200":
+          description: A new token pair for the account.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/RequestId"
+            Cache-Control:
+              $ref: "#/components/headers/NoStore"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TokenPair"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "422":
           $ref: "#/components/responses/ValidationError"
         "503":
@@ -311,8 +413,9 @@ components:
 
     Busy:
       description: |
-        The resource was locked by a concurrent request for longer than the server waits (2 s).
-        Nothing changed; retry the same request after `Retry-After` seconds.
+        The server was busy: a resource stayed locked by a concurrent request for longer than
+        the server waits (2 s), or every password-hashing slot stayed taken for 1 s. Nothing
+        changed; retry the same request after `Retry-After` seconds.
       headers:
         X-Request-ID:
           $ref: "#/components/headers/RequestId"
@@ -327,6 +430,24 @@ components:
             type: about:blank
             title: Service Unavailable
             status: 503
+            request_id: 3f1c2a9e0b7d4c55a1e2f3a4b5c6d7e8
+
+    EmailRegistered:
+      description: |
+        Sign-up with an email that already has an account (A7). Offer sign-in instead. The body
+        has this fixed `type` and says nothing else about the account.
+      headers:
+        X-Request-ID:
+          $ref: "#/components/headers/RequestId"
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/EmailRegisteredProblem"
+          example:
+            type: urn:capsule:problem:email-registered
+            title: Conflict
+            status: 409
+            detail: An account with this email exists. Sign in instead.
             request_id: 3f1c2a9e0b7d4c55a1e2f3a4b5c6d7e8
 
     InternalError:
@@ -432,6 +553,53 @@ components:
         guest_credential:
           $ref: "#/components/schemas/Secret"
 
+    SignUpRequest:
+      type: object
+      additionalProperties: false
+      required: [email, password, age_confirmed]
+      properties:
+        email:
+          $ref: "#/components/schemas/Email"
+        password:
+          description: |
+            12 to 128 characters after NFC; any Unicode, spaces included. Up to 512 as sent,
+            because NFC can shorten a decomposed password. The server also refuses common
+            passwords, the app name and the email's name (422).
+          type: string
+          minLength: 12
+          maxLength: 512
+        age_confirmed:
+          description: The user confirmed they are 18 or older. Only `true` is accepted.
+          const: true
+
+    SignInRequest:
+      type: object
+      additionalProperties: false
+      required: [email, password]
+      properties:
+        email:
+          description: |
+            Normalised as on sign-up. A value that is not a valid email gets the same 401 as an
+            unknown one.
+          type: string
+          maxLength: 254
+        password:
+          description: |
+            Up to 512 as sent, like sign-up. A password longer than 128 characters after NFC
+            cannot belong to an account and gets the same 401, without a hash.
+          type: string
+          minLength: 1
+          maxLength: 512
+
+    Email:
+      description: |
+        One `@` and a dotted domain, at most 254 characters. Surrounding whitespace is trimmed;
+        whitespace inside is refused. The server also refuses empty domain labels, control and
+        invisible format characters, and checks the length again after normalising (422).
+      type: string
+      maxLength: 254
+      pattern: "^\\s*[^@\\s]+@[^@\\s]+\\.[^@\\s]+\\s*$"
+
     Dependency:
       type: string
       enum: [postgres, redis]
@@ -459,6 +627,18 @@ components:
         request_id:
           type: string
           pattern: "^[A-Za-z0-9-]{1,64}$"
+
+    EmailRegisteredProblem:
+      allOf:
+        - $ref: "#/components/schemas/Problem"
+        - type: object
+          properties:
+            type:
+              const: urn:capsule:problem:email-registered
+            title:
+              const: Conflict
+            status:
+              const: 409
 
     ReadyProblem:
       allOf:

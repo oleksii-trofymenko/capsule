@@ -155,7 +155,7 @@ STRIDE: S spoofing, T tampering, R repudiation, I information disclosure, D deni
 
 ### Personal data by column
 
-Planned E1 tables (names are set by E1-05/E1-07; the rules hold whatever the final names are).
+E1 tables. `principals`, refresh families and tokens and guest credentials come from E1-05/E1-05c, `accounts` from E1-07; planned rows say so.
 
 | Table / store | Column | Personal | Encrypted at rest (E1) | Allowed in logs |
 | --- | --- | --- | --- | --- |
@@ -164,6 +164,7 @@ Planned E1 tables (names are set by E1-05/E1-07; the rules hold whatever the fin
 | accounts | email (normalised) | Yes | No (D4, accepted for E1) | Never |
 | accounts | password_hash | Yes (credential) | Hashed, not encrypted | Never |
 | accounts | age_confirmed_at | Yes | No | Never |
+| accounts | created_at | Linked to a person | No | Never |
 | refresh families / tokens | token hash, family id, state, timestamps (idle and absolute limits), family revoked_at | Credential material | Hashed | Never the hash or the token; family id at DEBUG only |
 | guest credential record | credential hash | Credential material | Hashed | Never |
 | Redis rate-limit keys | HMAC of IP and email | Yes (pseudonymised) | No | Never |

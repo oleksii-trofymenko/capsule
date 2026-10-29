@@ -3,9 +3,8 @@
 import asyncio
 import base64
 import logging
-import threading
 import time
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator
 
 import pytest
 from argon2 import PasswordHasher, Type, extract_parameters
@@ -19,7 +18,13 @@ from modules.auth.hashing import (
     PasswordHashing,
     create_hash_executor,
 )
-from tests.support import client_for, dummy_settings
+from tests.support import (
+    BlockingHasher,
+    client_for,
+    dummy_settings,
+    fill_hash_slots,
+    wait_until,
+)
 
 pytestmark = pytest.mark.anyio
 
@@ -100,46 +105,12 @@ async def test_a_corrupt_stored_hash_fails_and_logs_no_value(
     assert PASSWORD not in caplog.text
 
 
-class _BlockingHasher:
-    """Stands in for the hasher's `hash`: each call blocks its thread until `release` is set."""
-
-    def __init__(self) -> None:
-        self.release = threading.Event()
-        self.started = 0
-        self.running = 0
-        self.most_running = 0
-        self._lock = threading.Lock()
-
-    def hash(self, _: str) -> str:
-        with self._lock:
-            self.started += 1
-            self.running += 1
-            self.most_running = max(self.most_running, self.running)
-        self.release.wait(5)
-        with self._lock:
-            self.running -= 1
-        return "hashed"
-
-
-async def _until(condition: Callable[[], bool], timeout_s: float = 2.0) -> None:
-    deadline = time.monotonic() + timeout_s
-    while not condition():
-        assert time.monotonic() < deadline, "condition not reached"
-        await asyncio.sleep(0.01)
-
-
-async def _fill_slots(hasher: PasswordHashing, fake: _BlockingHasher) -> list[asyncio.Task[str]]:
-    tasks = [asyncio.create_task(hasher.hash(PASSWORD)) for _ in range(hashing.SLOTS)]
-    await _until(lambda: fake.started == hashing.SLOTS)
-    return tasks
-
-
 async def test_a_fifth_caller_times_out_after_1_s_and_runs_no_hash(
     hasher: PasswordHashing, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
-    fake = _BlockingHasher()
+    fake = BlockingHasher()
     monkeypatch.setattr(hashing, "_HASHER", fake)
-    tasks = await _fill_slots(hasher, fake)
+    tasks = await fill_hash_slots(hasher, fake)
 
     started = time.monotonic()
     with caplog.at_level(logging.WARNING, logger=hashing.__name__), pytest.raises(HasherBusyError):
@@ -161,9 +132,9 @@ async def test_a_cancelled_caller_keeps_its_slot_until_the_hash_ends(
     hasher: PasswordHashing, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(hashing, "ACQUIRE_TIMEOUT_S", 0.2)
-    fake = _BlockingHasher()
+    fake = BlockingHasher()
     monkeypatch.setattr(hashing, "_HASHER", fake)
-    tasks = await _fill_slots(hasher, fake)
+    tasks = await fill_hash_slots(hasher, fake)
 
     tasks[0].cancel()
     with pytest.raises(asyncio.CancelledError):
@@ -175,7 +146,7 @@ async def test_a_cancelled_caller_keeps_its_slot_until_the_hash_ends(
 
     fake.release.set()
     await asyncio.gather(*tasks[1:])
-    await _until(lambda: fake.running == 0)
+    await wait_until(lambda: fake.running == 0)
     assert await hasher.hash(PASSWORD) == "hashed"  # every slot came back
     assert fake.most_running == hashing.SLOTS
 
@@ -194,9 +165,9 @@ async def test_a_raising_hash_gives_its_slot_back(
         with pytest.raises(MemoryError):
             await hasher.hash(PASSWORD)
 
-    fake = _BlockingHasher()
+    fake = BlockingHasher()
     monkeypatch.setattr(hashing, "_HASHER", fake)
-    tasks = await _fill_slots(hasher, fake)  # all four slots are free again
+    tasks = await fill_hash_slots(hasher, fake)  # all four slots are free again
     fake.release.set()
     assert await asyncio.gather(*tasks) == ["hashed"] * hashing.SLOTS
 
@@ -205,9 +176,9 @@ async def test_a_caller_cancelled_while_waiting_leaks_no_slot(
     hasher: PasswordHashing, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(hashing, "ACQUIRE_TIMEOUT_S", 0.5)
-    fake = _BlockingHasher()
+    fake = BlockingHasher()
     monkeypatch.setattr(hashing, "_HASHER", fake)
-    tasks = await _fill_slots(hasher, fake)
+    tasks = await fill_hash_slots(hasher, fake)
 
     waiting = asyncio.create_task(hasher.hash(PASSWORD))
     await asyncio.sleep(0.05)  # it is now queued on the semaphore
@@ -218,12 +189,12 @@ async def test_a_caller_cancelled_while_waiting_leaks_no_slot(
 
     fake.release.set()
     await asyncio.gather(*tasks)
-    await _until(lambda: fake.running == 0)
+    await wait_until(lambda: fake.running == 0)
 
     # Exactly four slots: none lost, and none gained by the cancellation.
-    again = _BlockingHasher()
+    again = BlockingHasher()
     monkeypatch.setattr(hashing, "_HASHER", again)
-    refill = await _fill_slots(hasher, again)
+    refill = await fill_hash_slots(hasher, again)
     with pytest.raises(HasherBusyError):
         await hasher.hash(PASSWORD)
     again.release.set()
@@ -234,7 +205,7 @@ async def test_a_busy_hasher_is_a_503_problem_with_retry_after(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(hashing, "ACQUIRE_TIMEOUT_S", 0.2)
-    fake = _BlockingHasher()
+    fake = BlockingHasher()
     monkeypatch.setattr(hashing, "_HASHER", fake)
     app = create_app(dummy_settings())
 
@@ -244,7 +215,7 @@ async def test_a_busy_hasher_is_a_503_problem_with_retry_after(
         return {"hash": await hasher.hash(PASSWORD)}
 
     async with client_for(app, lifespan=True) as client:
-        tasks = await _fill_slots(app.state.password_hashing, fake)
+        tasks = await fill_hash_slots(app.state.password_hashing, fake)
         response = await client.post("/probe", headers={"X-Request-ID": "rid-busy"})
         hashes_when_refused = fake.started
         fake.release.set()

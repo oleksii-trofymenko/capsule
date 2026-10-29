@@ -20,7 +20,7 @@ As an account holder who forgot my password, I want to reset it from my email, s
 - [ ] A new ADR picks a transactional email service with a free tier that covers beta volume (€0 budget, EU data processing or adequate safeguards, DPA available). It also covers what happens when the free quota runs out.
 - [ ] Email verification at sign-up (owner decision 2026-10-27): contract operations to send and confirm a verification link; the token is single-use, short-lived and stored only as a hash; unverified accounts keep working, and the account records `email_verified_at`. Decide in the plan whether sign-up with a registered email then answers "check your email" instead of the A7 conflict, and update `docs/security.md` A7 if so.
 - [ ] Contract first: request-reset and confirm-reset operations. Requesting a reset always returns the same response whether or not the email exists.
-- [ ] The reset token is single-use, short-lived and stored only as a hash. A successful reset revokes every refresh family of the account.
+- [ ] The reset token is single-use, short-lived and stored only as a hash. A successful reset revokes every refresh family of the account. Sign-in re-checks, under a row lock in its token-issuing transaction, that the password hash is still the one it verified, and answers the same 401 if not, so a sign-in racing a reset cannot keep access (E1-07 security review).
 - [ ] Rate limits per IP and per email on reset requests (reusing E1-08).
 - [ ] The provider API key is stored as ADR-015 requires. Email bodies and addresses never appear in logs.
 - [ ] Tests: unit and integration with a fake email sender at the system boundary; contract; expired, reused and wrong tokens.

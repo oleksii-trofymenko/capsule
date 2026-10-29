@@ -1,27 +1,37 @@
-"""POST /v1/auth/guest, /v1/auth/refresh and /v1/auth/logout (contracts/openapi.yaml)."""
+"""POST /v1/auth/guest, /refresh, /logout, /sign-up and /sign-in (contracts/openapi.yaml).
 
-import logging
+A busy refresh family or password hasher raises a `ServiceBusyError`, which the app answers
+with 503 and `Retry-After` (core/errors.py).
+"""
+
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, Body, Depends, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
-from core.errors import Problem
+from core.errors import Problem, problem_response
 from modules.auth.activity import record_activity
 from modules.auth.dependencies import get_auth_service, unauthorized
-from modules.auth.schemas import GuestSession, GuestSignIn, RefreshRequest, TokenPair
+from modules.auth.schemas import (
+    GuestSession,
+    GuestSignIn,
+    RefreshRequest,
+    SignInRequest,
+    SignUpRequest,
+    TokenPair,
+)
 from modules.auth.service import (
     AuthService,
-    FamilyBusyError,
+    EmailRegisteredError,
     InvalidCredentialError,
     InvalidRefreshTokenError,
+    InvalidSignInError,
     IssuedTokens,
 )
 
 router = APIRouter(prefix="/v1/auth", tags=["auth"])
-logger = logging.getLogger(__name__)
 
 NO_STORE = {"Cache-Control": "no-store"}
 # 400 is FastAPI's own answer to a body it cannot read (BadRequest in the contract).
@@ -41,6 +51,25 @@ _LOGOUT_RESPONSES: dict[int | str, dict[str, Any]] = {
     400: {"model": Problem},
     503: {"model": Problem},
 }
+_SIGN_UP_RESPONSES: dict[int | str, dict[str, Any]] = {
+    201: {"model": TokenPair},
+    400: {"model": Problem},
+    409: {"model": Problem},
+    503: {"model": Problem},
+}
+_SIGN_IN_RESPONSES: dict[int | str, dict[str, Any]] = {
+    200: {"model": TokenPair},
+    400: {"model": Problem},
+    401: {"model": Problem},
+    503: {"model": Problem},
+}
+# A7: a fixed type the app keys on to offer sign-in, and nothing about the account.
+EMAIL_REGISTERED = Problem(
+    type="urn:capsule:problem:email-registered",
+    title="Conflict",
+    status=409,
+    detail="An account with this email exists. Sign in instead.",
+)
 
 
 def _token_response(body: BaseModel, status: int) -> JSONResponse:
@@ -49,12 +78,6 @@ def _token_response(body: BaseModel, status: int) -> JSONResponse:
 
 def _pair(tokens: IssuedTokens) -> dict[str, str]:
     return {"access_token": tokens.access_token, "refresh_token": tokens.refresh_token}
-
-
-def _busy(operation: str) -> HTTPException:
-    """Lock timeout: retryable, and the client must never treat it as a logout."""
-    logger.warning("%s: refresh family busy", operation)
-    return HTTPException(status_code=503, headers={"Retry-After": "1"})
 
 
 @router.post("/guest", status_code=201, response_model=None, responses=_RESPONSES)
@@ -91,8 +114,6 @@ async def refresh(
         tokens = await service.refresh(body.refresh_token)
     except InvalidRefreshTokenError:
         raise unauthorized() from None
-    except FamilyBusyError:
-        raise _busy("refresh") from None
     record_activity(request, tokens.principal_id)  # ADR-022: a 2xx refresh counts as activity
     return _token_response(TokenPair(**_pair(tokens)), 200)
 
@@ -102,8 +123,33 @@ async def logout(
     body: RefreshRequest,
     service: Annotated[AuthService, Depends(get_auth_service)],
 ) -> Response:
-    try:
-        await service.logout(body.refresh_token)  # not activity (ADR-022)
-    except FamilyBusyError:
-        raise _busy("logout") from None
+    await service.logout(body.refresh_token)  # not activity (ADR-022)
     return Response(status_code=204)
+
+
+@router.post("/sign-up", status_code=201, response_model=None, responses=_SIGN_UP_RESPONSES)
+async def sign_up(
+    body: SignUpRequest,
+    service: Annotated[AuthService, Depends(get_auth_service)],
+) -> JSONResponse:
+    # Rate limits (E1-08) go in front of this handler, before any hash (R8).
+    try:
+        tokens = await service.sign_up(body.email, body.password)
+    except EmailRegisteredError:
+        return problem_response(EMAIL_REGISTERED)
+    return _token_response(TokenPair(**_pair(tokens)), 201)
+
+
+@router.post("/sign-in", response_model=None, responses=_SIGN_IN_RESPONSES)
+async def sign_in(
+    request: Request,
+    body: SignInRequest,
+    service: Annotated[AuthService, Depends(get_auth_service)],
+) -> JSONResponse:
+    # Rate limits (E1-08) go in front of this handler, before any verify (R8).
+    try:
+        tokens = await service.sign_in(body.email, body.password)
+    except InvalidSignInError:
+        raise unauthorized() from None
+    record_activity(request, tokens.principal_id)  # ADR-022: sign-in counts as activity
+    return _token_response(TokenPair(**_pair(tokens)), 200)
