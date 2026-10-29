@@ -94,3 +94,18 @@ def test_sign_in_hides_input_in_errors() -> None:
 )
 def test_try_normalise_email(raw: str, normalised: str | None) -> None:
     assert try_normalise_email(raw) == normalised
+
+
+@pytest.mark.parametrize("model", [SignUpRequest, SignInRequest])
+def test_guest_credential_is_optional_but_never_null_or_out_of_bounds(
+    model: type[SignUpRequest | SignInRequest],
+) -> None:
+    body: dict[str, object] = (
+        GOOD if model is SignUpRequest else {"email": "a@b.co", "password": "p"}
+    )
+
+    assert model.model_validate(body).guest_credential is None
+    assert model.model_validate(body | {"guest_credential": "g?!"}).guest_credential == "g?!"
+    assert _error_types(model, body | {"guest_credential": None}) == ["string_type"]
+    assert _error_types(model, body | {"guest_credential": ""}) == ["string_too_short"]
+    assert _error_types(model, body | {"guest_credential": "x" * 257}) == ["string_too_long"]

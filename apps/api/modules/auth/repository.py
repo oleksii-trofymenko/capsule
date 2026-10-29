@@ -22,12 +22,13 @@ _INSERT_TOKEN = text(
 # ADR-014: an expired guest gets the same answer as an unknown credential, even before the purge.
 # Shared by the guest sign-in and refresh, so both expire a guest at the same moment.
 _GUEST_ACTIVE = "p.last_activity_at >= now() - make_interval(days => :retention_days)"
-_FIND_ACTIVE_GUEST = text(
-    f"""
+_ACTIVE_GUEST = f"""
     SELECT p.id FROM guest_credentials c JOIN principals p ON p.id = c.principal_id
     WHERE c.credential_hash = :hash AND p.kind = 'guest' AND {_GUEST_ACTIVE}
-    """  # noqa: S608 - a fixed fragment; values are bound parameters
-)
+"""  # noqa: S608 - a fixed fragment; values are bound parameters
+# R3: FOR SHARE queues a guest sign-in behind a move of the same guest, which holds FOR UPDATE;
+# once the move commits, the row is gone and the sign-in gets the one 401, not a foreign-key 500.
+_FIND_ACTIVE_GUEST = text(_ACTIVE_GUEST + " FOR SHARE OF c")
 _PRINCIPAL_KIND = text("SELECT kind FROM principals WHERE id = :id")
 # ADR-022: at most one write per principal per hour.
 _TOUCH = text(
@@ -70,6 +71,35 @@ async def find_active_guest(
         await session.execute(_FIND_ACTIVE_GUEST, params)
     ).scalar_one_or_none()
     return principal_id
+
+
+# --- the move from guest to account (ADR-014 R3, ADR-022): one transaction, which first calls
+# set_lock_timeout and locks the credential row, so only one move deletes a given guest.
+
+_LOCK_ACTIVE_GUEST = text(_ACTIVE_GUEST + " FOR UPDATE OF c")
+# Cascades to the guest's credential and refresh families (and their tokens).
+_DELETE_GUEST = text("DELETE FROM principals WHERE id = :id AND kind = 'guest'")
+
+
+async def lock_active_guest(
+    session: AsyncSession, credential_hash: bytes, retention_days: int
+) -> uuid.UUID | None:
+    """None for an unknown, expired or non-guest credential, or one a concurrent move used."""
+    params = {"hash": credential_hash, "retention_days": retention_days}
+    principal_id: uuid.UUID | None = (
+        await session.execute(_LOCK_ACTIVE_GUEST, params)
+    ).scalar_one_or_none()
+    return principal_id
+
+
+async def move_guest_data(session: AsyncSession, guest_id: uuid.UUID, account_id: uuid.UUID) -> int:
+    """Moves every guest-owned row to the account; returns the number of guides moved. The guest
+    owns nothing but its credential and sessions until E3 adds guides, which move here."""
+    return 0
+
+
+async def delete_guest(session: AsyncSession, guest_id: uuid.UUID) -> None:
+    await session.execute(_DELETE_GUEST, {"id": guest_id})
 
 
 async def principal_kind(session: AsyncSession, principal_id: uuid.UUID) -> Kind | None:

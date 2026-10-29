@@ -242,8 +242,12 @@ paths:
         An email that is already registered gets 409 with the `EmailRegistered` problem type:
         offer sign-in instead. It says nothing else about the account.
 
-        A 503 means the password hasher was busy; nothing was created, so retry after
-        `Retry-After`.
+        Guest data: with `guest_credential`, everything the guest owns moves to the new account
+        and the guest is deleted, in the same step that creates the account. See
+        `AccountSession.guest_guides_moved`.
+
+        A 503 means the password hasher or the guest credential was busy; nothing was created
+        and nothing moved, so retry after `Retry-After`.
 
         No idempotency key: replaying a stored response would mean storing the raw refresh token
         (A4). A retry after a lost 201 gets 409; sign in with the same password.
@@ -271,7 +275,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/TokenPair"
+                $ref: "#/components/schemas/AccountSession"
         "400":
           $ref: "#/components/responses/BadRequest"
         "409":
@@ -292,7 +296,12 @@ paths:
         same 401, after the same work on the server. Each sign-in starts a new token family for
         this device; logout ends only that family.
 
-        A 503 means the password hasher was busy; retry after `Retry-After`.
+        Guest data: with `guest_credential`, everything the guest owns moves to this account and
+        the guest is deleted. A wrong password moves nothing. See
+        `AccountSession.guest_guides_moved`.
+
+        A 503 means the password hasher or the guest credential was busy; nothing moved, so
+        retry after `Retry-After`.
 
         No idempotency key: replaying a stored response would mean storing the raw refresh token
         (A4). A retry after a lost 200 signs in again.
@@ -316,7 +325,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/TokenPair"
+                $ref: "#/components/schemas/AccountSession"
         "400":
           $ref: "#/components/responses/BadRequest"
         "401":
@@ -553,6 +562,36 @@ components:
         guest_credential:
           $ref: "#/components/schemas/Secret"
 
+    AccountSession:
+      description: A token pair for an account, after sign-up or sign-in.
+      type: object
+      additionalProperties: false
+      required: [access_token, token_type, expires_in, refresh_token, guest_guides_moved]
+      properties:
+        access_token:
+          $ref: "#/components/schemas/TokenPair/properties/access_token"
+        token_type:
+          const: Bearer
+        expires_in:
+          const: 600
+        refresh_token:
+          $ref: "#/components/schemas/Secret"
+        guest_guides_moved:
+          description: |
+            Guides moved from the guest named by `guest_credential` (ADR-014, ADR-022). 0 when
+            no credential was sent, or when it is unknown, already used, past the guest
+            retention or not a guest's: such a credential moves nothing and is not an error.
+            Guest data is never matched by email, device or analytics id. Always 0 until
+            guides exist (E3).
+          type: integer
+          minimum: 0
+
+    GuestCredential:
+      description: |
+        Optional. The guest credential on this phone, so the guest's data moves to the account
+        and the guest is deleted. After a move the credential stops working.
+      $ref: "#/components/schemas/Secret"
+
     SignUpRequest:
       type: object
       additionalProperties: false
@@ -571,6 +610,8 @@ components:
         age_confirmed:
           description: The user confirmed they are 18 or older. Only `true` is accepted.
           const: true
+        guest_credential:
+          $ref: "#/components/schemas/GuestCredential"
 
     SignInRequest:
       type: object
@@ -590,6 +631,8 @@ components:
           type: string
           minLength: 1
           maxLength: 512
+        guest_credential:
+          $ref: "#/components/schemas/GuestCredential"
 
     Email:
       description: |
