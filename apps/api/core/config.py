@@ -101,6 +101,14 @@ class Settings(BaseModel):
     def _empty_is_unset(cls, value: object) -> object:
         return None if value == "" else value
 
+    @field_validator("deletion_ledger_dir")
+    @classmethod
+    def _absolute(cls, value: Path | None) -> Path | None:
+        # A relative path would resolve inside the container, off the external disk.
+        if value is not None and not value.is_absolute():
+            raise ValueError("must be an absolute path")
+        return value
+
     @field_validator("redis_url", mode="before")
     @classmethod
     def _redis_url(cls, value: object) -> object:

@@ -1,5 +1,6 @@
 """The deletion-ledger file writer (ADR-022): line format and every failure path, no database."""
 
+import asyncio
 import logging
 import threading
 import time
@@ -117,6 +118,67 @@ async def test_a_stalled_disk_times_out_and_logs(
     [record] = _errors(caplog)
     assert record.__dict__["error"] == "TimeoutError"
     assert record.__dict__["principal_id"] == str(PRINCIPAL)
+
+
+class _Stall:
+    """Stands in for `_write`: each call records its line, then blocks until `release`."""
+
+    def __init__(self) -> None:
+        self.release = threading.Event()
+        self.started = threading.Event()
+        self.lines: list[str] = []
+
+    def __call__(self, _: object, line: str) -> None:
+        self.lines.append(line)
+        self.started.set()
+        self.release.wait(5)
+
+
+async def test_a_queued_append_behind_a_stall_times_out_and_never_runs(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    ledger_for: list[DeletionLedger],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    stall = _Stall()
+    monkeypatch.setattr(deletion_ledger, "_write", stall)
+    ledger = _ledger(ledger_for, tmp_path, timeout_s=0.05)
+    second = LedgerEntry(uuid.uuid4(), DELETED_AT)
+    third = LedgerEntry(uuid.uuid4(), DELETED_AT)
+
+    await ledger.append(ENTRY)  # its write stays stuck in the one thread
+    await ledger.append(second)  # queued behind it
+    stall.release.set()
+    await ledger.append(third)  # runs after the stuck write: the queue is FIFO
+
+    assert [(r.__dict__["principal_id"], r.__dict__["error"]) for r in _errors(caplog)] == [
+        (str(PRINCIPAL), "TimeoutError"),
+        (str(second.principal_id), "TimeoutError"),
+    ]
+    assert stall.lines == [ENTRY.line(), third.line()]  # the second write never ran
+
+
+async def test_a_cancelled_append_is_logged_and_re_raised(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    ledger_for: list[DeletionLedger],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    stall = _Stall()
+    monkeypatch.setattr(deletion_ledger, "_write", stall)
+    ledger = _ledger(ledger_for, tmp_path)
+    task = asyncio.create_task(ledger.append(ENTRY))
+    await asyncio.to_thread(stall.started.wait, 5)
+
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    stall.release.set()
+
+    [record] = _errors(caplog)
+    assert record.__dict__["event"] == "ledger_append_failed"
+    assert record.__dict__["principal_id"] == str(PRINCIPAL)
+    assert record.__dict__["error"] == "CancelledError"
 
 
 @pytest.mark.parametrize("case", ["unset", "missing", "a_file"])

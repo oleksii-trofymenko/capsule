@@ -53,11 +53,18 @@ def test_from_env_reads_optional_variables() -> None:
     assert settings.guest_retention_days == 7
 
 
-@pytest.mark.parametrize(("value", "expected"), [("/srv/ledger", Path("/srv/ledger")), ("", None)])
-def test_deletion_ledger_dir_is_read_and_empty_means_unset(
-    value: str, expected: Path | None
-) -> None:
-    assert _from_env(REQUIRED | {"DELETION_LEDGER_DIR": value}).deletion_ledger_dir == expected
+def test_deletion_ledger_dir_is_read_and_empty_means_unset(tmp_path: Path) -> None:
+    read = _from_env(REQUIRED | {"DELETION_LEDGER_DIR": str(tmp_path)}).deletion_ledger_dir
+
+    assert read == tmp_path
+    assert _from_env(REQUIRED | {"DELETION_LEDGER_DIR": ""}).deletion_ledger_dir is None
+
+
+@pytest.mark.parametrize("value", ["ledger", "./ledger", "../srv/ledger"])
+def test_relative_deletion_ledger_dir_is_rejected(value: str) -> None:
+    # It would resolve inside the container, not on the mounted disk (ADR-022).
+    with pytest.raises(ConfigError, match="DELETION_LEDGER_DIR: Value error, must be an absolute"):
+        _from_env(REQUIRED | {"DELETION_LEDGER_DIR": value})
 
 
 def test_missing_variable_is_named() -> None:

@@ -53,6 +53,17 @@ def _write(directory: Path | None, line: str) -> None:
         os.fsync(file.fileno())
 
 
+def _log_failed_append(entry: LedgerEntry, error: str) -> None:
+    logger.error(
+        "deletion ledger append failed",
+        extra={
+            "event": "ledger_append_failed",
+            "principal_id": str(entry.principal_id),
+            "error": error,
+        },
+    )
+
+
 def _directory_problem(directory: Path | None) -> str | None:
     if directory is None:
         return "unset"
@@ -83,15 +94,13 @@ class DeletionLedger:
         """Call after commit. Never raises; a failure is logged and the table stays the record."""
         try:
             await self._run(_write, self._directory, entry.line())
+        except asyncio.CancelledError:
+            # A cancelled request, or close() dropping a queued write: the deletion is committed,
+            # so the failed append must still reach the log (ADR-022 restore step 2).
+            _log_failed_append(entry, "CancelledError")
+            raise
         except Exception as exc:
-            logger.error(
-                "deletion ledger append failed",
-                extra={
-                    "event": "ledger_append_failed",
-                    "principal_id": str(entry.principal_id),
-                    "error": type(exc).__name__,
-                },
-            )
+            _log_failed_append(entry, type(exc).__name__)
 
     async def check_directory(self) -> None:
         """At start-up: log an unusable directory, never raise."""
@@ -106,7 +115,9 @@ class DeletionLedger:
             )
 
     def close(self) -> None:
-        # Queued appends are dropped (each already timed out or logged); a running one finishes.
+        # Queued appends are dropped, and each one logs its failed append. A write stuck on a
+        # hung disk keeps its thread, which blocks process exit until Docker's SIGKILL. Accepted:
+        # the deletion is committed and the table stays the record, so no data is lost.
         self._executor.shutdown(wait=False, cancel_futures=True)
 
     async def _run[T](self, func: Callable[..., T], *args: object) -> T:
