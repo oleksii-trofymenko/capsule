@@ -26,7 +26,7 @@ from tests.integration.test_auth import (
     principal_of,
     without_request_id,
 )
-from tests.support import assert_matches_contract, client_for
+from tests.support import A15, assert_matches_contract, client_for
 
 pytestmark = [pytest.mark.integration, pytest.mark.anyio]
 
@@ -611,7 +611,7 @@ async def test_a15_events_carry_the_principal_and_no_secret(
     events = [
         (line["event"], line["principal_id"], line.get("reason"))
         for line in lines
-        if "event" in line and line["event"] not in {"guest_created", "guest_signed_in"}
+        if line["logger"] == A15 and line["event"] not in {"guest_created", "guest_signed_in"}
     ]
     assert events == [
         ("grace_used", principal, None),

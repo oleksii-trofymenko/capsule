@@ -9,6 +9,7 @@ from fastapi import FastAPI
 from core import health
 from core.config import ConfigError, Settings
 from core.db import create_engine, create_sessionmaker
+from core.deletion_ledger import DeletionLedger
 from core.errors import install_problem_handlers
 from core.logging import configure_logging
 from core.middleware import RequestContextMiddleware
@@ -30,11 +31,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.redis = create_redis(settings)
         hash_executor = auth.create_hash_executor()
         app.state.password_hashing = auth.PasswordHashing(hash_executor)
+        # ADR-022: an unusable ledger directory is logged, never fatal.
+        app.state.deletion_ledger = DeletionLedger(settings.deletion_ledger_dir)
+        await app.state.deletion_ledger.check_directory()
         try:
             yield
         finally:
             # Queued hashes are dropped; a running one finishes in its thread, unawaited.
             hash_executor.shutdown(wait=False, cancel_futures=True)
+            app.state.deletion_ledger.close()
             # Probes that overran /v1/ready may still be closing their connections. A psycopg
             # cleanup that outlasts this bounded wait can log "Task was destroyed but it is
             # pending" when the loop closes; that is bounded and acceptable at shutdown.

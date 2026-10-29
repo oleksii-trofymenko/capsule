@@ -1,4 +1,5 @@
 from collections.abc import Callable
+from pathlib import Path
 
 import pytest
 from hypothesis import given
@@ -29,6 +30,7 @@ def test_from_env_reads_variables_and_applies_defaults() -> None:
     assert settings.database_connect_timeout_s == 5
     assert settings.redis_socket_timeout_s == 5.0
     assert settings.guest_retention_days == 30
+    assert settings.deletion_ledger_dir is None  # no default path in code (ADR-022)
     assert settings.signing_keys == TEST_SIGNING_KEYS
 
 
@@ -49,6 +51,20 @@ def test_from_env_reads_optional_variables() -> None:
     assert settings.database_connect_timeout_s == 3
     assert settings.redis_socket_timeout_s == 0.75
     assert settings.guest_retention_days == 7
+
+
+def test_deletion_ledger_dir_is_read_and_empty_means_unset(tmp_path: Path) -> None:
+    read = _from_env(REQUIRED | {"DELETION_LEDGER_DIR": str(tmp_path)}).deletion_ledger_dir
+
+    assert read == tmp_path
+    assert _from_env(REQUIRED | {"DELETION_LEDGER_DIR": ""}).deletion_ledger_dir is None
+
+
+@pytest.mark.parametrize("value", ["ledger", "./ledger", "../srv/ledger"])
+def test_relative_deletion_ledger_dir_is_rejected(value: str) -> None:
+    # It would resolve inside the container, not on the mounted disk (ADR-022).
+    with pytest.raises(ConfigError, match="DELETION_LEDGER_DIR: Value error, must be an absolute"):
+        _from_env(REQUIRED | {"DELETION_LEDGER_DIR": value})
 
 
 def test_missing_variable_is_named() -> None:

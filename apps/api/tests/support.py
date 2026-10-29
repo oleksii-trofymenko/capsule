@@ -23,6 +23,9 @@ from modules.auth.hashing import PasswordHashing
 
 CONTRACT_PATH = Path(__file__).resolve().parents[3] / "contracts" / "openapi.yaml"
 ALEMBIC_INI = Path(__file__).resolve().parents[1] / "alembic.ini"
+# A15 security events are on this logger; other lines (such as an unset ledger directory at
+# start-up, ADR-022) may carry an `event` too.
+A15 = "capsule.security"
 REQUEST_ID = re.compile(r"[A-Za-z0-9-]{1,64}")
 # In memory, like the file `make up` writes; never a real key.
 TEST_SIGNING_KEYS = (SigningKey("2026-01-01", SecretBytes(bytes(range(32)))),)

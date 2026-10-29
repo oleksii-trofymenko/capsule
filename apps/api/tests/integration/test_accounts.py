@@ -25,7 +25,7 @@ from tests.integration.test_auth import (
     sql,
     without_request_id,
 )
-from tests.support import BlockingHasher, assert_matches_contract, client_for, fill_hash_slots
+from tests.support import A15, BlockingHasher, assert_matches_contract, client_for, fill_hash_slots
 
 pytestmark = [pytest.mark.integration, pytest.mark.anyio]
 
@@ -435,7 +435,7 @@ async def test_logs_hold_no_email_password_or_token_and_a15_events_carry_the_pri
 
     lines = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
     principal = str(principal_of(created))
-    events = [(line["event"], line.get("principal_id")) for line in lines if "event" in line]
+    events = [(line["event"], line.get("principal_id")) for line in lines if line["logger"] == A15]
     assert events == [
         ("account_created", principal),
         ("signed_in", principal),
